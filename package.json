@@ -1,0 +1,31 @@
+{
+  "name": "childcare-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "托育知护 - 婴幼儿照护知识库智能问答平台",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "childcare": "tsx apps/cli/src/index.ts",
+    "dev": "concurrently -k -n API,Web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch apps/server/src/index.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts --host 127.0.0.1",
+    "eval": "tsx apps/server/src/evaluate.ts",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

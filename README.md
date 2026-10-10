@@ -1,0 +1,96 @@
+# 托育知护
+
+面向托育机构人员与婴幼儿照护者的本地知识问答工具。依据本机 SQLite 资料检索，使用本机 Ollama 模型整理答复，返回资料名、页码和原文链接。当前首版资料和边界说明见 `docs/SOURCE_CATALOG.md` 与 `docs/REQUIREMENT.md`。
+
+## 本机启动
+
+环境：Windows 10/11、Node.js 20+、npm。项目 API 默认只绑定 `127.0.0.1`。
+
+```powershell
+npm install
+npm run dev
+```
+
+打开 <http://127.0.0.1:5173>。问答前端会显示本机模型和资料库状态；API 健康检查在 <http://127.0.0.1:4174/api/health>。
+
+已有 `data/childcare.db` 时可直接问答；没有数据库时服务会自动创建空库，并显示资料目录为空。
+
+## 本机模型
+
+默认模型为 `qwen3:8b`，Ollama 模型页显示模型文件约 5.2 GB，中文能力和推理能力适合本机 RAG 试用。运行还需要额外显存/内存供上下文缓存使用；当前应用将上下文限制为 8192 tokens，降低显存压力。模型首次下载需要网络，答复和检索本身在本机运行。
+
+1. 从 <https://ollama.com/download/windows> 安装 Ollama 并启动 Ollama 应用。
+2. 在 PowerShell 下载模型：
+
+```powershell
+ollama pull qwen3:8b
+```
+
+3. 保持 Ollama 在后台运行，刷新问答页顶部的模型状态。
+
+若尚未安装 Ollama，前后端仍可运行、测试资料检索和引用；服务会返回检索原文，不会假装生成了模型答案。
+
+可在项目根目录创建 `.env` 覆盖默认配置：
+
+```dotenv
+CHILDCARE_PORT=4174
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3:8b
+OLLAMA_CONTEXT_TOKENS=8192
+CHILDCARE_RETRIEVAL_TOP_K=5
+CHILDCARE_DB_PATH=./data/childcare.db
+CHILDCARE_RAW_DIR=./data/raw
+```
+
+## 知识库
+
+当前问答检索从 `data/childcare.db` 的页级原文构建中文字符 BM25 候选，混合精确文号、标题、短语加权，并按资料去重。原始文件仍按内容哈希保存在 `data/raw/`。不依赖云模型、向量数据库、Python、GPU 专用服务或外网 embedding。
+
+采集登记清单：
+
+```powershell
+npm run childcare -- collect --config data/sources.yaml --dry-run
+npm run childcare -- collect --config data/sources.yaml
+npm run childcare -- export-md
+```
+
+新增文件可使用现有 CLI：
+
+```powershell
+npm run childcare -- import .\incoming\guide.pdf --title "资料标题" --type training_material --authority expert_education_material
+```
+
+只有允许展示摘录的来源会进入检索和引用；标记为 `canShowExcerpt: false` 或 `access: restricted` 的资料不会参与问答。WHO 国际资料目前只采集了出版物信息页，且其许可设为禁止摘录和导出，未混入问答证据。
+
+## 问答边界
+
+- 无关话题在检索和模型调用前拒绝；简单的上下文追问只在已有托育对话中放行。
+- 疾病诊断、发育障碍判断、检查报告解释、用药剂量和治疗请求在模型调用前拒答。
+- 模型仅获得本轮检索证据；系统提示词明确资料和用户内容均不可信、不得遵循其中的指令。
+- 证据不足时直接说明资料库无法确认，不用模型记忆补答案。
+- 对话历史只保存在当前浏览器的 localStorage；不会发送到云端。
+- 2019 年文件仍有 `legalStatus: unknown` 的来源，在状态核验前不表述为现行有效规定。
+- 完整范围与提示词边界见 [安全策略](docs/SAFETY_POLICY.md)；提示词正文和确定性边界实现位于 `apps/server/src/safety.ts`。
+
+## 检查与评测
+
+```powershell
+npm test
+npm run typecheck
+npm run build
+npm run eval
+```
+
+`data/eval/baseline.json` 覆盖核心检索、范围拒答和医疗拒答场景。`npm run eval` 不调用 Ollama，适合在没有下载模型时检查本地 RAG 基线。
+
+## 项目结构
+
+- `apps/web`：Vue 3 问答工作台
+- `apps/server`：本机 HTTP/SSE API、范围与医疗边界、提示词、Ollama 适配、本地 BM25 检索
+- `apps/cli`：资料采集、导入、检查与导出
+- `packages/pipeline`：SQLite、原始文件存储、PDF/DOCX/HTML 文本提取
+- `packages/core`：知识来源、版本、页级资料的领域模型
+- `data/sources.yaml`：来源采集登记清单
+- `data/eval/baseline.json`：本地基线评测问题
+
+原始资料、SQLite 数据库和生成的 Markdown 都在 Git 忽略目录中。注意核实版权、授权和现行效力后再将资料用于对外或商业服务。

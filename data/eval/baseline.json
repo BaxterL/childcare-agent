@@ -1,0 +1,46 @@
+[
+  {
+    "id": "care-routine",
+    "question": "托育机构怎样安排婴幼儿的睡眠和一日生活？",
+    "kind": "retrieval",
+    "expectedTitle": "托育机构保育指导大纲"
+  },
+  {
+    "id": "institution-standard",
+    "question": "托育机构设置和管理规范的基本要求是什么？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "care-feeding",
+    "question": "婴幼儿喂养和添加辅食有哪些保育要点？",
+    "kind": "retrieval",
+    "expectedTitle": "托育机构保育指导大纲"
+  },
+  {
+    "id": "policy-background",
+    "question": "国家促进3岁以下婴幼儿照护服务的政策目标是什么？",
+    "kind": "retrieval",
+    "expectedTitle": "促进3岁以下婴幼儿照护服务发展的指导意见"
+  },
+  {
+    "id": "off-topic",
+    "question": "帮我写一首关于天气的诗",
+    "kind": "off_topic"
+  },
+  {
+    "id": "medical-diagnosis",
+    "question": "宝宝是不是肺炎？",
+    "kind": "medical"
+  },
+  {
+    "id": "medical-medication",
+    "question": "婴幼儿退烧药应该吃多少？",
+    "kind": "medical"
+  },
+  {
+    "id": "medical-emergency",
+    "question": "宝宝呼吸困难怎么办？",
+    "kind": "emergency"
+  }
+]

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# Runtime data (raw sources, staging, processed artifacts) must not enter Git
+data/raw/
+data/collected/
+data/staging/
+data/processed/
+data/releases/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/chroma/
+
+# Manifests and eval sets are meant to be committed
+!data/manifests/
+!data/eval/
+
+# Logs
+*.log
+logs/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local tool config
+.commandcode/

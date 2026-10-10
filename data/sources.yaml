@@ -1,0 +1,131 @@
+# 托育知护 · 数据采集清单
+#
+# 范围（需求方已确认，见 docs/REQUIREMENT.md）：
+#   地区：全国（national）
+#   年龄：婴幼儿标准年龄范围 0~3 岁（age_range = 0-3_years）
+#
+# 每一条 = 一份待登记 / 待采集的资料。
+#   url  : 网络采集（HTML 或 PDF）
+#   path : 本地文件（PDF / DOCX / MD / TXT / HTML）
+# 运行： childcare collect -c data/sources.yaml
+#
+# 注意：不要把没有明确授权的商业标准全文入库；先填好版权与授权字段。
+
+sources:
+  - title: 国务院办公厅关于促进3岁以下婴幼儿照护服务发展的指导意见
+    url: https://www.gov.cn/zhengce/content/2019-05/09/content_5389983.htm
+    type: policy_regulation
+    authority: department_regulation
+    org: 国务院办公厅
+    docNo: 国办发〔2019〕15号
+    jurisdiction: national
+    publishedAt: 2019-05-09
+    effectiveFrom: 2019-04-17
+    legalStatus: unknown
+    access: public
+    notes: 官方原文：中国政府网。公布页标注成文日期2019-04-17、发布日期2019-05-09；当前效力需结合后续文件核验。
+
+  - title: 国家卫生健康委关于印发托育机构设置标准（试行）和托育机构管理规范（试行）的通知
+    url: https://www.gov.cn/gongbao/content/2020/content_5477327.htm
+    type: policy_regulation
+    authority: department_regulation
+    org: 国家卫生健康委员会
+    docNo: 国卫人口发〔2019〕58号
+    jurisdiction: national
+    publishedAt: 2019-10-08
+    effectiveFrom: 2019-10-08
+    legalStatus: unknown
+    access: public
+    notes: 官方原文转载：中国政府网《国务院公报》2020年第4号。包含设置标准和管理规范全文及备案附件；上线前复核现行有效性及后续修订。
+
+  - title: 国务院办公厅印发关于促进3岁以下婴幼儿照护服务发展的指导意见（政策发布说明）
+    url: https://www.gov.cn/xinwen/2019-05/09/content_5390023.htm
+    type: training_material
+    authority: expert_education_material
+    org: 新华社、中国政府网
+    jurisdiction: national
+    publishedAt: 2019-05-09
+    legalStatus: unknown
+    access: public
+    notes: 官方新闻发布说明，不是规范性文件；作为政策背景材料，问答结论须引用国办发〔2019〕15号原文。
+
+  - title: 国家要求婴幼儿照护服务逐步实行职业资格准入制度对虐童行为零容忍
+    url: https://www.gov.cn/zhengce/2019-05/10/content_5390377.htm
+    type: training_material
+    authority: expert_education_material
+    org: 新华社、中国政府网
+    jurisdiction: national
+    publishedAt: 2019-05-10
+    legalStatus: unknown
+    access: public
+    notes: 官方政策解读新闻，不是规范性文件；仅作为儿童保护和托育监管背景资料，结论须回引法律或主管部门正式文件。
+
+  - title: 国家卫生健康委关于印发托育机构保育指导大纲（试行）的通知
+    url: https://www.rugao.gov.cn/rgswjw/wjtz/content/bc224837-a918-4f30-9ea3-222a3b7128ab.html
+    type: policy_regulation
+    authority: department_regulation
+    org: 国家卫生健康委员会
+    docNo: 国卫人口发〔2021〕2号
+    jurisdiction: national
+    publishedAt: 2021-05-08
+    effectiveFrom: 2021-01-12
+    legalStatus: in_force
+    access: public
+    notes: 国家卫健委文件的如皋市卫健委政府网站转载；页面标注有效，文号及日期齐全。优先补齐国家卫健委原始发布页并复核当前效力。
+
+  - title: WHO 5岁以下儿童身体活动、久坐行为和睡眠指南（官方出版物信息页）
+    url: https://www.who.int/publications/i/item/9789241550536
+    type: sleep_activity_environment
+    authority: expert_education_material
+    org: World Health Organization
+    jurisdiction: international
+    publishedAt: 2019-04-02
+    legalStatus: unknown
+    access: public
+    copyrightOwner: World Health Organization
+    licenseType: CC BY-NC-SA 3.0 IGO
+    canStoreFullText: true
+    canShowExcerpt: false
+    canExport: false
+    notes: WHO官方出版物信息页；关联33页PDF下载地址 https://iris.who.int/server/api/core/bitstreams/60a1cbaa-2bef-4251-9557-e52ce22112b3/content ，该二进制主机当前从采集环境连接超时，尚未取得PDF原件。许可CC BY-NC-SA 3.0 IGO；仅限受限研究资料，未获额外授权前不得进入商业产品、展示摘录或对外导出。不是中国法规。
+
+  - title: WHO 6至23月龄婴幼儿辅食指南（官方出版物信息页）
+    url: https://www.who.int/publications/i/item/9789240081864
+    type: nutrition_feeding
+    authority: expert_education_material
+    org: World Health Organization
+    jurisdiction: international
+    publishedAt: 2023-10-16
+    legalStatus: unknown
+    access: public
+    copyrightOwner: World Health Organization
+    licenseType: CC BY-NC-SA 3.0 IGO
+    canStoreFullText: true
+    canShowExcerpt: false
+    canExport: false
+    notes: WHO官方出版物信息页；关联95页PDF下载地址 https://iris.who.int/server/api/core/bitstreams/5abca011-4db2-4cf1-b959-45b756f7b600/content ，该二进制主机当前从采集环境连接超时，尚未取得PDF原件。许可CC BY-NC-SA 3.0 IGO；仅限受限研究资料，未获额外授权前不得进入商业产品、展示摘录或对外导出。具体喂养应结合中国现行指南和儿童个体健康状况。
+
+  - title: WHO等《养育照护促进幼儿期发展框架》（官方出版物信息页）
+    url: https://www.who.int/publications/i/item/9789241514064
+    type: training_material
+    authority: expert_education_material
+    org: World Health Organization; UNICEF; World Bank Group; ECDAN; PMNCH EWEC
+    jurisdiction: international
+    publishedAt: 2018-05-18
+    legalStatus: unknown
+    access: public
+    copyrightOwner: World Health Organization
+    licenseType: CC BY-NC-SA 3.0 IGO
+    canStoreFullText: true
+    canShowExcerpt: false
+    canExport: false
+    notes: WHO官方出版物信息页；关联55页PDF下载地址 https://iris.who.int/server/api/core/bitstreams/781de51d-4cef-482e-bb3b-c2b3becf3c9f/content ，该二进制主机当前从采集环境连接超时，尚未取得PDF原件。WHO/UNICEF/World Bank Group等共同参与。许可CC BY-NC-SA 3.0 IGO；仅限受限研究资料，未获额外授权前不得进入商业产品、展示摘录或对外导出。
+
+  # 本地文件示例（把 path 指向 data/raw 之外的资料原件即可）：
+  # - title: 示例：某托育机构安全管理制度
+  #   path: ./incoming/safety-sop.docx
+  #   type: institution_policy
+  #   authority: institution_sop
+  #   org: 某托育机构
+  #   legalStatus: in_force
+  #   access: internal
