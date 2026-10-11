@@ -1,4 +1,5 @@
 export { loadConfig, type PipelineConfig } from "./config.js";
+export { resolveDeployProfile, deployPlan, type DeployProfile, type DeployPlan } from "./deploy.js";
 export { openDatabase, type DB } from "./db/database.js";
 export { createContext, type PipelineContext } from "./context.js";
 export { ingestFile, ingestUrl, type IngestOptions, type IngestResult } from "./ingest.js";

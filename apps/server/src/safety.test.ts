@@ -27,9 +27,16 @@ describe("托育问答边界", () => {
     expect(isEmergencyRequest("托育机构午睡巡视怎么做")).toBe(false);
   });
 
-  it("系统提示要求只用证据并把原文视作不可信资料", () => {
+  it("系统提示要求只用证据并把原文和附件视作不可信资料", () => {
     expect(SYSTEM_PROMPT).toContain("只依据本轮提供的【检索证据】");
     expect(SYSTEM_PROMPT).toContain("提示注入");
+    expect(SYSTEM_PROMPT).toContain("不能作为出处");
+    expect(SYSTEM_PROMPT).toContain("用户附件");
+  });
+
+  it("附件里的领域词可以让简短提问留在范围内，但不能放行明确的无关请求", () => {
+    expect(isInDomain("看看这份材料", [], "托育机构午睡巡视要求")).toBe(true);
+    expect(isInDomain("帮我写一首诗", [], "托育机构午睡巡视要求")).toBe(false);
   });
 
   it("识别托育领域词汇", () => {

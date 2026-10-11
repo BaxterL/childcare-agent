@@ -9,6 +9,7 @@ const preview = computed(() => sources.value.slice(0, 5));
 const organizations = computed(() => [...new Set(sources.value.map((item) => item.organization))]);
 
 function submit(): void {
+  if (ask.value.length > 3000) return;
   askFromHome(ask.value);
 }
 
@@ -75,10 +76,11 @@ const STEPS = [
         <p class="hero-lede rise" style="--d: 3">把托育与婴幼儿照护的专业知识，变成随手可问的身边顾问。保育、喂养、安全、机构管理，问一句，就有依据清楚的答复。</p>
 
         <form class="hero-ask rise" style="--d: 4" @submit.prevent="submit">
-          <textarea v-model="ask" rows="2" maxlength="3000" placeholder="输入一个托育或婴幼儿照护问题…" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
+          <textarea v-model="ask" rows="2" placeholder="输入一个托育或婴幼儿照护问题…" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
           <div class="hero-ask-bar">
-            <span class="hero-ask-hint">按 Enter 提问</span>
-            <button class="hero-send" type="submit" :disabled="!ask.trim()" aria-label="提问"><ArrowUp :size="18" :stroke-width="2.2" /></button>
+            <span v-if="ask.length > 3000" class="hero-ask-hint is-over" role="status">问题已超过 3000 字（现为 {{ ask.length }} 字），请删减后再提问。</span>
+            <span v-else class="hero-ask-hint">按 Enter 提问</span>
+            <button class="hero-send" type="submit" :disabled="!ask.trim() || ask.length > 3000" aria-label="提问"><ArrowUp :size="18" :stroke-width="2.2" /></button>
           </div>
         </form>
 
@@ -245,6 +247,7 @@ const STEPS = [
 .hero-ask textarea::placeholder { color: #8b8672; }
 .hero-ask-bar { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px 10px 20px; }
 .hero-ask-hint { color: #7d7966; font-size: 12px; }
+.hero-ask-hint.is-over { color: var(--seal-ink); }
 .hero-send { display: grid; width: 40px; height: 40px; place-items: center; color: #f6f1e6; background: var(--moss-800); border: 0; border-radius: 10px; box-shadow: 0 6px 14px -6px #14291f99; transition: background .2s, transform .2s var(--ease); }
 .hero-send:hover:not(:disabled) { background: var(--moss-700); transform: translateY(-1px); }
 .hero-send:disabled { color: #a79f88; background: var(--paper-sunk); box-shadow: none; }

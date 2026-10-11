@@ -37,6 +37,7 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   sources?: SourceRef[];
+  attachments?: { name: string }[];
   error?: string;
 }
 

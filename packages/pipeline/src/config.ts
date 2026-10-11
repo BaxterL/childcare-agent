@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { deployPlan, resolveDeployProfile } from "./deploy.js";
 import { DEFAULT_EMBED_MODEL, type EmbedDownloadSource } from "./embed/index.js";
 
 export interface PipelineConfig {
@@ -52,7 +53,9 @@ export function loadConfig(overrides: Partial<PipelineConfig> = {}): PipelineCon
     fetchTimeoutMs: overrides.fetchTimeoutMs ?? envInt("CHILDCARE_FETCH_TIMEOUT_MS", 30_000),
     maxDownloadBytes:
       overrides.maxDownloadBytes ?? envInt("CHILDCARE_MAX_DOWNLOAD_BYTES", 50 * 1024 * 1024),
-    embedEnabled: overrides.embedEnabled ?? envBool("CHILDCARE_EMBED_ENABLED", true),
+    embedEnabled:
+      overrides.embedEnabled ??
+      envBool("CHILDCARE_EMBED_ENABLED", deployPlan(resolveDeployProfile(process.env.CHILDCARE_DEPLOY)).embedEnabled),
     embedModel: overrides.embedModel ?? process.env.CHILDCARE_EMBED_MODEL ?? DEFAULT_EMBED_MODEL,
     embedCacheDir: overrides.embedCacheDir ?? resolve(process.env.CHILDCARE_EMBED_CACHE_DIR ?? "./data/models"),
     embedDownloadSource:

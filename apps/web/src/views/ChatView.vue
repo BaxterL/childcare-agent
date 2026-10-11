@@ -5,10 +5,12 @@ import {
   BookOpen,
   Check,
   Copy,
+  FileText,
   House,
   Library,
   Lock,
   Menu,
+  Paperclip,
   Plus,
   ShieldAlert,
   Square,
@@ -21,6 +23,18 @@ import type { ChatMessage, ChatSession, SourceRef } from "../types";
 
 const STORAGE_KEY = "childcare.sessions.v1";
 const STEPS = ["理解问题", "查找资料", "组织答复"];
+const QUESTION_LIMIT = 3000;
+const ATTACHMENT_LIMIT = 8000;
+const FILE_LIMIT = 3;
+const FILE_BYTE_LIMIT = 8 * 1024 * 1024;
+const FILE_ACCEPT = ".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown";
+const READABLE = new Set(["pdf", "docx", "txt", "md", "markdown"]);
+
+interface PendingFile {
+  id: string;
+  name: string;
+  text: string;
+}
 
 const busy = ref(false);
 const step = ref(0);
@@ -31,6 +45,11 @@ const railOpen = ref(false);
 const copiedId = ref("");
 const messageList = ref<HTMLElement | null>(null);
 const inputEl = ref<HTMLTextAreaElement | null>(null);
+const fileEl = ref<HTMLInputElement | null>(null);
+const files = ref<PendingFile[]>([]);
+const fileNote = ref("");
+const readingFiles = ref(false);
+const dragging = ref(false);
 const pop = reactive({ show: false, x: 0, y: 0, above: true, source: null as SourceRef | null });
 let controller: AbortController | null = null;
 let pinned = true;
@@ -38,6 +57,12 @@ let pinned = true;
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeId.value) ?? null);
 const activeMessages = computed(() => activeSession.value?.messages ?? []);
 const lastMessageId = computed(() => activeMessages.value[activeMessages.value.length - 1]?.id ?? "");
+const overQuestion = computed(() => question.value.length > QUESTION_LIMIT);
+const limitDetail = computed(() => {
+  if (!overQuestion.value) return fileNote.value;
+  return `问题已超过 ${QUESTION_LIMIT} 字（现为 ${question.value.length} 字），请删减后再发送。`;
+});
+const canSend = computed(() => Boolean(question.value.trim()) && !overQuestion.value && !readingFiles.value);
 
 const service = computed(() => {
   if (serviceState.value === "offline") return { tone: "is-offline", title: "服务暂时不可用", note: "请稍后再试，你无需做任何设置" };
@@ -120,6 +145,8 @@ function startNew(): void {
   else makeSession();
   railOpen.value = false;
   question.value = "";
+  files.value = [];
+  fileNote.value = "";
   void nextTick(() => inputEl.value?.focus());
 }
 
@@ -209,21 +236,114 @@ function sendSuggestion(value: string): void {
   void sendQuestion();
 }
 
+function extensionOf(name: string): string {
+  return /\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase() ?? "";
+}
+
+function pickFiles(): void {
+  if (busy.value || readingFiles.value) return;
+  if (files.value.length >= FILE_LIMIT) {
+    fileNote.value = "一次最多 3 个文件。";
+    return;
+  }
+  fileEl.value?.click();
+}
+
+async function addFiles(list: File[]): Promise<void> {
+  if (!list.length || busy.value) return;
+  const room = FILE_LIMIT - files.value.length;
+  if (room <= 0) {
+    fileNote.value = "一次最多 3 个文件。";
+    return;
+  }
+  const incoming = list.slice(0, room);
+  fileNote.value = list.length > room ? "一次最多 3 个文件。" : "";
+  readingFiles.value = true;
+  try {
+    for (const file of incoming) {
+      const ext = extensionOf(file.name);
+      if (ext === "doc") {
+        fileNote.value = "暂不支持旧版 Word（.doc），请另存为 .docx 后再上传。";
+        continue;
+      }
+      if (!READABLE.has(ext)) {
+        fileNote.value = "请上传 PDF、Word（.docx）或文本文件。";
+        continue;
+      }
+      if (file.size > FILE_BYTE_LIMIT) {
+        fileNote.value = `《${file.name}》超过 8 MB，请换一份更小的文件。`;
+        continue;
+      }
+      const body = new FormData();
+      body.append("file", file, file.name);
+      const response = await fetch("/api/chat/files", { method: "POST", body });
+      const data = (await response.json()) as { files?: { name: string; text: string }[]; message?: string };
+      const extracted = data.files?.[0];
+      if (!response.ok || !extracted) {
+        fileNote.value = data.message || "文件暂时读不出来，请换一份后再试。";
+        continue;
+      }
+      const next = files.value.reduce((sum, item) => sum + item.text.length, 0) + extracted.text.length;
+      if (next > ATTACHMENT_LIMIT) {
+        fileNote.value = `附件文字已超过 ${ATTACHMENT_LIMIT} 字（现为 ${next} 字），请删减后再发送。`;
+        continue;
+      }
+      files.value = [...files.value, { id: crypto.randomUUID(), name: extracted.name, text: extracted.text }];
+    }
+  } catch {
+    fileNote.value = "文件暂时读不出来，请换一份后再试。";
+  } finally {
+    readingFiles.value = false;
+  }
+}
+
+function onPick(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const list = [...(input.files ?? [])];
+  input.value = "";
+  void addFiles(list);
+}
+
+function onDrop(event: DragEvent): void {
+  dragging.value = false;
+  void addFiles([...(event.dataTransfer?.files ?? [])]);
+}
+
+function onDragLeave(event: DragEvent): void {
+  const next = event.relatedTarget;
+  if (next instanceof Node && (event.currentTarget as Node).contains(next)) return;
+  dragging.value = false;
+}
+
+function removeFile(id: string): void {
+  files.value = files.value.filter((file) => file.id !== id);
+  fileNote.value = "";
+}
+
 async function sendQuestion(): Promise<void> {
   const text = question.value.trim();
-  if (!text || busy.value) return;
+  if (!text || busy.value || readingFiles.value || question.value.length > QUESTION_LIMIT) return;
   const sessionId = activeSession.value?.id ?? makeSession();
   // Work on the reactive proxy so streamed text re-renders live.
   const session = sessions.value.find((item) => item.id === sessionId)!;
   const history = session.messages.map(({ role, content }) => ({ role, content })).slice(-8);
+  const attachments = files.value.map(({ name, text: fileText }) => ({ name, text: fileText }));
   session.messages.push(
-    { id: crypto.randomUUID(), role: "user", content: text, createdAt: new Date().toISOString() },
+    {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+      createdAt: new Date().toISOString(),
+      attachments: attachments.map(({ name }) => ({ name })),
+    },
     { id: crypto.randomUUID(), role: "assistant", content: "", createdAt: new Date().toISOString(), sources: [] },
   );
   const reply = session.messages[session.messages.length - 1]!;
   if (session.title === "新咨询") session.title = text.length > 28 ? `${text.slice(0, 28)}…` : text;
   touchSession(session);
   question.value = "";
+  files.value = [];
+  fileNote.value = "";
   busy.value = true;
   step.value = 0;
   controller = new AbortController();
@@ -233,7 +353,7 @@ async function sendQuestion(): Promise<void> {
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ question: text, history }),
+      body: JSON.stringify({ question: text, history, attachments }),
       signal: controller.signal,
     });
     if (!response.ok || !response.body) throw new Error("服务暂时不可用，请稍后再试。");
@@ -375,7 +495,7 @@ function isStreaming(message: ChatMessage): boolean {
         <section v-if="!activeMessages.length" class="hello">
           <img class="hello-mark rise" style="--d: 0" src="/logo.svg" alt="" width="56" height="56" />
           <h2 class="rise" style="--d: 1">你好，我是托育知护</h2>
-          <p class="rise" style="--d: 2">我会依据资料库回答婴幼儿照护与托育机构管理的问题，并标明每条依据的出处。你可以直接提问，也可以从下面开始。</p>
+          <p class="rise" style="--d: 2">我会依据资料库回答婴幼儿照护与托育机构管理的问题，并标明每条依据的出处。你可以直接提问，或附上 PDF、Word，也可以从下面开始。</p>
           <div class="quick rise" style="--d: 3">
             <button v-for="item in SUGGESTIONS" :key="item.text" type="button" @click="sendSuggestion(item.text)">
               <span class="quick-tag">{{ item.tag }}</span>
@@ -389,6 +509,9 @@ function isStreaming(message: ChatMessage): boolean {
             <section v-if="message.role === 'user'" class="ask">
               <p class="ask-meta"><span class="seal-dot"></span>咨询<time>{{ formatTime(message.createdAt) }}</time></p>
               <p class="ask-text">{{ message.content }}</p>
+              <ul v-if="message.attachments?.length" class="ask-files">
+                <li v-for="(file, index) in message.attachments" :key="`${file.name}-${index}`"><FileText :size="14" />{{ file.name }}</li>
+              </ul>
             </section>
 
             <section v-else class="reply" :data-msg="message.id">
@@ -428,13 +551,29 @@ function isStreaming(message: ChatMessage): boolean {
 
       <form class="dock" @submit.prevent="sendQuestion">
         <p v-if="serviceState === 'offline'" class="notice" role="status"><ShieldAlert :size="14" />服务暂时不可用，稍后会自动重试。</p>
-        <div class="composer" :class="{ 'is-busy': busy }">
-          <textarea ref="inputEl" v-model="question" rows="1" maxlength="3000" :disabled="busy" placeholder="输入托育或婴幼儿照护问题…" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
+        <p v-if="limitDetail" class="composer-alert" role="status">{{ limitDetail }}</p>
+        <div
+          class="composer"
+          :class="{ 'is-busy': busy, 'is-over': Boolean(limitDetail), 'is-drag': dragging }"
+          @dragenter.prevent="dragging = true"
+          @dragover.prevent="dragging = true"
+          @dragleave="onDragLeave"
+          @drop.prevent="onDrop"
+        >
+          <ul v-if="files.length" class="file-row">
+            <li v-for="file in files" :key="file.id" class="file-chip">
+              <FileText :size="14" />
+              <span>{{ file.name }}</span>
+              <button type="button" :aria-label="`移除${file.name}`" :disabled="busy" @click="removeFile(file.id)"><X :size="14" /></button>
+            </li>
+          </ul>
+          <textarea ref="inputEl" v-model="question" rows="1" :disabled="busy" placeholder="输入问题，也可附上 PDF 或 Word…" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
           <div class="composer-bar">
+            <button class="attach" type="button" aria-label="添加文件" title="添加 PDF 或 Word" :disabled="busy || readingFiles" @click="pickFiles"><Paperclip :size="18" /></button>
+            <input ref="fileEl" class="file-input" type="file" multiple :accept="FILE_ACCEPT" @change="onPick" />
             <span class="composer-hint"><kbd>Enter</kbd> 发送<i></i><kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</span>
-            <span v-if="question.length > 2400" class="composer-count">{{ question.length }}/3000</span>
             <button v-if="busy" class="send stop" type="button" aria-label="停止生成" title="停止生成" @click="stopGeneration"><Square :size="13" fill="currentColor" /></button>
-            <button v-else class="send" type="submit" :disabled="!question.trim()" aria-label="发送问题" title="发送"><ArrowUp :size="18" :stroke-width="2.2" /></button>
+            <button v-else class="send" type="submit" :disabled="!canSend" aria-label="发送问题" title="发送"><ArrowUp :size="18" :stroke-width="2.2" /></button>
           </div>
         </div>
         <p class="scope-note"><ShieldAlert :size="13" />不提供疾病诊断、检查解读及用药治疗建议</p>
@@ -537,6 +676,9 @@ function isStreaming(message: ChatMessage): boolean {
 .ask-meta { display: flex; align-items: center; gap: 9px; color: var(--ink-3); font: 500 11px/1 var(--mono); letter-spacing: .12em; }
 .ask-meta time { margin-left: 4px; letter-spacing: .04em; }
 .ask-text { margin-top: 14px; font: 600 25px/1.5 var(--serif); letter-spacing: .01em; text-wrap: balance; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ask-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ask-files li { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 32px; padding: 0 10px; color: var(--ink-2); background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; }
+.ask-files svg { flex: none; color: var(--seal); }
 
 .reply { animation: rise .6s var(--ease) both; }
 .reply-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 14px; }
@@ -607,16 +749,27 @@ function isStreaming(message: ChatMessage): boolean {
 /* Composer */
 .dock { padding: 14px clamp(20px, 4vw, 56px) 16px; background: linear-gradient(180deg, #f6f1e600, var(--paper) 36%); }
 .notice { display: flex; align-items: center; gap: 7px; width: min(720px, 100%); margin: 0 auto 10px; padding: 9px 12px; color: var(--seal-ink); background: var(--seal-tint); border-radius: 8px; font-size: 13px; }
+.composer-alert { width: min(720px, 100%); margin: 0 auto 8px; color: var(--seal-ink); font-size: 13px; line-height: 1.6; }
 .composer { width: min(720px, 100%); margin: 0 auto; background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; box-shadow: 0 1px 0 #fff inset, 0 18px 40px -22px #2a24127a, 0 2px 6px #2a24120f; transition: border-color .25s, box-shadow .25s; }
-.composer:focus-within { border-color: var(--moss-700); box-shadow: 0 1px 0 #fff inset, 0 0 0 4px #27503f1c, 0 18px 40px -22px #2a24127a; }
+.composer:focus-within, .composer.is-drag { border-color: var(--moss-700); box-shadow: 0 1px 0 #fff inset, 0 0 0 4px #27503f1c, 0 18px 40px -22px #2a24127a; }
+.composer.is-over { border-color: var(--seal); }
+.file-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 12px 14px 0; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 32px; padding: 0 4px 0 10px; color: var(--ink-2); background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; }
+.file-chip svg { flex: none; color: var(--seal); }
+.file-chip span { overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip button { display: grid; width: 24px; height: 24px; place-items: center; color: var(--ink-3); background: none; border: 0; border-radius: 6px; }
+.file-chip button:hover { color: var(--seal-ink); background: var(--seal-tint); }
 .composer textarea { display: block; width: 100%; min-height: 58px; max-height: 188px; padding: 17px 20px 6px; resize: none; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 16px; line-height: 1.7; }
 .composer textarea::placeholder { color: #8b8672; }
 .composer textarea:disabled { opacity: .6; }
-.composer-bar { display: flex; align-items: center; gap: 12px; padding: 4px 10px 10px 20px; }
+.composer-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px 10px 12px; }
+.attach { display: grid; width: 34px; height: 34px; flex: none; place-items: center; color: var(--ink-3); background: none; border: 0; border-radius: 8px; }
+.attach:hover:not(:disabled) { color: var(--ink); background: var(--paper-sunk); }
+.attach:disabled { opacity: .45; }
+.file-input { display: none; }
 .composer-hint { display: flex; align-items: center; gap: 6px; margin-right: auto; color: #7d7966; font-size: 12px; }
 .composer-hint i { width: 3px; height: 3px; margin: 0 6px; background: #c4b99f; border-radius: 50%; }
 .composer-hint kbd { padding: 2px 5px; color: var(--ink-3); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; font: 500 10.5px/1 var(--mono); }
-.composer-count { color: var(--seal-ink); font: 500 11.5px var(--mono); }
 .send { display: grid; width: 38px; height: 38px; flex: none; place-items: center; color: #f6f1e6; background: var(--moss-800); border: 0; border-radius: 10px; box-shadow: 0 6px 14px -6px #14291f99; transition: background .2s, transform .2s var(--ease); }
 .send:hover:not(:disabled) { background: var(--moss-700); transform: translateY(-1px); }
 .send:disabled { color: #a79f88; background: var(--paper-sunk); box-shadow: none; }
@@ -649,6 +802,7 @@ function isStreaming(message: ChatMessage): boolean {
   .dock { padding: 10px 14px 12px; }
   .composer-hint { display: none; }
   .composer-bar { justify-content: flex-end; }
+  .attach { margin-right: auto; }
   .scope-note { font-size: 11.5px; }
 }
 </style>

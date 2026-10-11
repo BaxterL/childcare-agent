@@ -85,10 +85,10 @@ tests/            跨包测试
 
 ## 5. 模型层（`apps/server/src/model.ts`）
 
-- 提供方：`deepseek`（联网主模型）+ `ollama`（本机辅助/降级）。
+- 回答提供方：`deepseek`。本地小模型只做检索，不写答复（和 chatlab 的语义索引模型同一分工）。
 - `resolveProviderOrder()`：读 `CHILDCARE_MODEL_PROVIDER`（`auto|deepseek|ollama`）。
-  - `ollama` → `[ollama]`
-  - `auto`（默认）→ 配了 `DEEPSEEK_API_KEY` 则 `[deepseek, ollama]`，否则 `[ollama]`
+  - `auto` / `deepseek`（默认）→ 配了 `DEEPSEEK_API_KEY` 则 `[deepseek]`，否则 `[]`（退回检索原文）
+  - `ollama` → `[ollama]`（显式指定才用本机对话模型写答案）
 - 流式：`streamDeepSeek`（OpenAI 兼容 `/chat/completions`，SSE）、`streamOllama`（`/api/chat`，NDJSON）。
 - 参数：超时 180s，`max_tokens/num_predict = 1100`，`temperature 0.2`，Ollama `num_ctx` 夹在 4096~16384（默认 8192）。
 - 降级策略：**仅在吐出任何 token 之前**失败才切换下一个提供方；已开始输出则不重试（避免半截答案）。
@@ -180,7 +180,7 @@ tests/            跨包测试
 
 - 本地库：**9 页 / 79 块 / 5 来源 / 79 条向量**（已全覆盖，模型 `bge-small-zh-v1.5`，512 维）。
 - 已实测端到端：一问「孩子在园里中午睡不着怎么安抚」→ 混合检索把《保育指导大纲》「第二章 > 二、睡眠」排到第 1，DeepSeek 带 `[1]` 引用作答，医疗边界保留。
-- 模型：DeepSeek 为联网主模型，Ollama 为本机降级，本地 ONNX 负责检索。
+- 模型：DeepSeek 只负责回答；本地 ONNX（`bge-small-zh-v1.5`）只负责检索。`qwen3:8b` 不参与问答。
 
 ## 13. 已知空缺与注意事项（给下一位）
 

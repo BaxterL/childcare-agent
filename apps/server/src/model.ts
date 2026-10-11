@@ -1,3 +1,5 @@
+import { deployPlan, resolveDeployProfile } from "@childcare/pipeline";
+
 export type ProviderId = "deepseek" | "ollama";
 
 export interface ChatMessage {
@@ -56,15 +58,15 @@ function ollamaConfig(): OllamaConfig {
 }
 
 /**
- * Ordered list of providers to try. A configured remote model (DeepSeek) is the
- * primary answerer; the local Ollama model is the auxiliary fallback, matching
- * the "remote main + local auxiliary" arrangement.
+ * Answer providers only. Retrieval uses the local embedding model and never
+ * this list. Ollama is off unless CHILDCARE_MODEL_PROVIDER=ollama.
  */
 export function resolveProviderOrder(
-  env: { CHILDCARE_MODEL_PROVIDER?: string; DEEPSEEK_API_KEY?: string } = process.env,
+  env: { CHILDCARE_MODEL_PROVIDER?: string; DEEPSEEK_API_KEY?: string; CHILDCARE_DEPLOY?: string } = process.env,
 ): ProviderId[] {
   const preferred = (env.CHILDCARE_MODEL_PROVIDER ?? "auto").trim().toLowerCase();
   const hasDeepSeek = Boolean(env.DEEPSEEK_API_KEY && env.DEEPSEEK_API_KEY.trim());
+  const ollamaFallback = deployPlan(resolveDeployProfile(env.CHILDCARE_DEPLOY)).ollamaFallback;
   const ordered: ProviderId[] = [];
   const push = (id: ProviderId): void => {
     if (!ordered.includes(id)) ordered.push(id);
@@ -74,8 +76,13 @@ export function resolveProviderOrder(
     push("ollama");
     return ordered;
   }
+  if (preferred === "deepseek") {
+    if (hasDeepSeek) push("deepseek");
+    else if (ollamaFallback) push("ollama");
+    return ordered;
+  }
   if (hasDeepSeek) push("deepseek");
-  push("ollama");
+  if (ollamaFallback) push("ollama");
   return ordered;
 }
 
@@ -254,7 +261,8 @@ async function probeDeepSeek(config: DeepSeekConfig): Promise<boolean> {
 }
 
 export async function modelStatus(): Promise<ModelStatus> {
-  const primary = resolveProviderOrder()[0] ?? "ollama";
+  const preferred = (process.env.CHILDCARE_MODEL_PROVIDER ?? "auto").trim().toLowerCase();
+  const primary = preferred === "ollama" ? "ollama" : "deepseek";
   if (primary === "deepseek") {
     const config = deepseekConfig();
     const connected = await probeDeepSeek(config);

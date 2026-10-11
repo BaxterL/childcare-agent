@@ -1,6 +1,6 @@
 # 托育知护
 
-面向托育机构人员与婴幼儿照护者的知识问答工具。在本机 SQLite 资料上做词法 + 本地向量混合检索，由联网模型（DeepSeek）整理答复、本机 Ollama 作为降级，返回资料名、页码和原文链接。当前资料与边界说明见 `docs/SOURCE_CATALOG.md` 与 `docs/REQUIREMENT.md`，数据模型见 `docs/DATA_SPEC.md`，后端交接见 `docs/BACKEND.md`。
+面向托育机构人员与婴幼儿照护者的知识问答工具。在本机 SQLite 资料上做词法 + 本地小模型向量检索，由联网模型（DeepSeek）整理答复，返回资料名、页码和原文链接。当前资料与边界说明见 `docs/SOURCE_CATALOG.md` 与 `docs/REQUIREMENT.md`，数据模型见 `docs/DATA_SPEC.md`，后端交接见 `docs/BACKEND.md`。
 
 ## 本机启动
 
@@ -17,13 +17,18 @@ npm run dev
 
 ## 模型架构
 
-采用「联网主模型 + 本地辅助模型」的分工：
+分工和 chatlab 一样：小模型只做检索，远程模型只写答复。
 
-- **回答（联网）**：默认 `deepseek-chat`，接收检索证据生成带引用的答复。配置 `DEEPSEEK_API_KEY` 后启用。
-- **检索（本地）**：用本机 ONNX 向量模型（transformers.js，默认 `Xenova/bge-small-zh-v1.5`，512 维）对问题和知识块做向量化，与 BM25 词法召回做 RRF 融合。向量模型文件缓存在项目内 `./data/models`，不写入系统盘。
-- **降级（本地）**：未联网或联网模型不可用时，回退到本机 Ollama `qwen3:8b`；Ollama 也不可用时只返回检索原文和引用，不伪造生成式总结。
+- **回答（联网）**：`deepseek-chat`。配置 `DEEPSEEK_API_KEY` 后启用。联网不可用时只列出检索到的原文，不用本机对话模型编答案。
+- **检索（本地小模型）**：`Xenova/bge-small-zh-v1.5`（约 95 MB，512 维）。它只把问题和资料块变成向量，再和词法召回融合。对应 chatlab 里的 `Qwen3-Embedding-0.6B`，不是 `qwen3:8b`。
 
-联网模型、本机 Ollama 和本地向量模型三者相互独立：任一不可用都会自动降级，不会中断问答。
+`qwen3:8b` 是对话模型，大约 5 GB，不参与回答，也不做向量检索。2 核 2G 和 2 核 4G 都载入不了它。三种部署方案都是「DeepSeek 回答 + 本地小模型检索」，区别只是机器内存：
+
+| 方案 | 机器 |
+|---|---|
+| `local` | 本机 RTX 5060 |
+| `linux-2g` | 2 核 2G |
+| `linux-4g` | 2 核 4G |
 
 ### 联网模型（DeepSeek）
 
@@ -46,28 +51,19 @@ npm run childcare -- reindex        # 重建分块并补齐向量
 
 若本地向量模型不可用，检索自动退回纯 BM25。
 
-### 本地降级模型（Ollama，可选）
+### 联网不可用时
 
-1. 从 <https://ollama.com/download/windows> 安装 Ollama 并启动。
-2. 在 PowerShell 下载模型，然后保持 Ollama 在后台运行：
-
-```powershell
-ollama pull qwen3:8b
-```
-
-若未配置联网模型也未安装 Ollama，前后端仍可运行、测试资料检索和引用；服务会返回检索原文，不会假装生成了模型答案。
+没有 `DEEPSEEK_API_KEY`，或 DeepSeek 暂时连不上时，服务只返回检索到的原文和出处，不用本机对话模型编答案。
 
 `.env` 覆盖默认配置（完整项见 `.env.example`）：
 
 ```dotenv
 CHILDCARE_PORT=4174
-CHILDCARE_MODEL_PROVIDER=auto           # auto | deepseek | ollama
+CHILDCARE_MODEL_PROVIDER=auto           # auto | deepseek；写成 ollama 才会用本机对话模型写答案
 DEEPSEEK_API_KEY=sk-...
 CHILDCARE_EMBED_ENABLED=1
 CHILDCARE_EMBED_MODEL=Xenova/bge-small-zh-v1.5
 CHILDCARE_EMBED_SOURCE=hf-mirror        # huggingface | hf-mirror
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3:8b
 CHILDCARE_RETRIEVAL_TOP_K=5
 CHILDCARE_DB_PATH=./data/childcare.db
 CHILDCARE_RAW_DIR=./data/raw
