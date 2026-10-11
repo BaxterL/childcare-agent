@@ -2,7 +2,9 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { createContext } from "@childcare/pipeline";
-import { getVisiblePage, getVisibleSources, searchEvidence, type Evidence } from "./retrieval.js";
+import { modelStatus, streamChat } from "./model.js";
+import { getChunkStats, getVisiblePage, getVisibleSources, searchEvidence, type Evidence } from "./retrieval.js";
+import { embedQuery, embeddingState, startEmbedder } from "./semantic.js";
 import {
   EMERGENCY_ANSWER,
   isInDomain,
@@ -17,9 +19,6 @@ const localEnvFile = resolve(".env");
 if (existsSync(localEnvFile)) process.loadEnvFile(localEnvFile);
 const context = createContext();
 const PORT = Number.parseInt(process.env.CHILDCARE_PORT ?? "4174", 10) || 4174;
-const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
-const OLLAMA_CONTEXT = Math.max(4096, Math.min(16384, Number.parseInt(process.env.OLLAMA_CONTEXT_TOKENS ?? "8192", 10) || 8192));
 const RETRIEVAL_TOP_K = Math.max(1, Math.min(8, Number.parseInt(process.env.CHILDCARE_RETRIEVAL_TOP_K ?? "5", 10) || 5));
 const WEB_DIST = resolve("apps/web/dist");
 
@@ -76,11 +75,11 @@ function evidenceForClient(hit: Evidence): Omit<Evidence, "text" | "score"> & { 
 }
 
 function retrievalOnlyAnswer(hits: Evidence[]): string {
-  const lines = ["本机模型当前不可用，先列出检索到的原文位置供核对：", ""];
+  const lines = ["模型服务当前不可用，先列出检索到的原文位置供核对：", ""];
   for (const hit of hits.slice(0, 3)) {
     lines.push(`- 《${hit.title}》第${hit.pageNumber}页：${hit.text.slice(0, 150).trim()}${hit.text.length > 150 ? "…" : ""}`);
   }
-  lines.push("", "连接 Ollama 并下载本地模型后，可在此基础上生成归纳答复。");
+  lines.push("", "恢复联网模型或启动本机 Ollama 后，可在此基础上生成归纳答复。");
   return lines.join("\n");
 }
 
@@ -93,55 +92,6 @@ function buildMessages(question: string, history: HistoryMessage[], hits: Eviden
     ...history,
     { role: "user", content: `【检索证据】\n${evidence}\n\n【当前问题】\n${question}\n\n只回答当前问题。关键结论引用证据编号，如[1]；区分原文要求、指导性建议和有限归纳。` },
   ];
-}
-
-async function streamOllama(
-  messages: Array<{ role: string; content: string }>,
-  signal: AbortSignal,
-  onToken: (text: string) => void,
-): Promise<void> {
-  const timeout = AbortSignal.timeout(180_000);
-  const combinedSignal = AbortSignal.any([signal, timeout]);
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      messages,
-      stream: true,
-      think: false,
-      keep_alive: "10m",
-      options: { temperature: 0.2, num_ctx: OLLAMA_CONTEXT, num_predict: 1100 },
-    }),
-    signal: combinedSignal,
-  });
-  if (!response.ok || !response.body) throw new Error(`Ollama HTTP ${response.status}`);
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const event = JSON.parse(line) as { message?: { content?: string }; error?: string; done?: boolean };
-        if (event.error) throw new Error(event.error);
-        if (event.message?.content) onToken(event.message.content);
-      }
-      if (done) break;
-    }
-    if (buffer.trim()) {
-      const event = JSON.parse(buffer) as { message?: { content?: string }; error?: string };
-      if (event.error) throw new Error(event.error);
-      if (event.message?.content) onToken(event.message.content);
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 async function chat(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -192,7 +142,8 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
 
     sendSse(response, "status", { stage: "retrieving" });
     const retrievalQuestion = `${question}\n${history.slice(-4).map((item) => item.role === "user" ? item.content : "").filter(Boolean).join(" ")}`;
-    const hits = searchEvidence(context, retrievalQuestion, RETRIEVAL_TOP_K);
+    const queryVector = await embedQuery(context.config, retrievalQuestion);
+    const hits = searchEvidence(context, retrievalQuestion, RETRIEVAL_TOP_K, queryVector);
     sendSse(response, "sources", hits.map(evidenceForClient));
     if (!hits.length) {
       sendSse(response, "delta", { text: "当前资料库没有找到足以回答这个问题的依据。你可以补充具体情形，或先到资料目录确认相关文件是否已入库。" });
@@ -203,13 +154,13 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
 
     sendSse(response, "status", { stage: "answering" });
     try {
-      await streamOllama(buildMessages(question, history, hits), controller.signal, (text) => {
+      const answer = await streamChat(buildMessages(question, history, hits), controller.signal, (text) => {
         sendSse(response, "delta", { text });
       });
-      sendSse(response, "done", { model: OLLAMA_MODEL, source_count: hits.length });
+      sendSse(response, "done", { model: answer.model, provider: answer.provider, source_count: hits.length });
     } catch (error) {
       if (controller.signal.aborted) return;
-      const reason = error instanceof Error && error.name === "TimeoutError" ? "模型响应超时" : "本机模型未连接";
+      const reason = error instanceof Error && error.name === "TimeoutError" ? "模型响应超时" : "模型服务未连接";
       sendSse(response, "warning", { code: "model_unavailable", message: reason });
       sendSse(response, "delta", { text: retrievalOnlyAnswer(hits) });
       sendSse(response, "done", { model: "retrieval-only", source_count: hits.length });
@@ -221,26 +172,26 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
   }
 }
 
-async function modelStatus(): Promise<{ connected: boolean; installed: boolean; model: string; url: string }> {
-  try {
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal: AbortSignal.timeout(900) });
-    if (!response.ok) return { connected: false, installed: false, model: OLLAMA_MODEL, url: OLLAMA_BASE_URL };
-    const body = await response.json() as { models?: Array<{ name?: string }> };
-    const installed = (body.models ?? []).some((model) => model.name === OLLAMA_MODEL || model.name?.startsWith(`${OLLAMA_MODEL}:`));
-    return { connected: true, installed, model: OLLAMA_MODEL, url: OLLAMA_BASE_URL };
-  } catch {
-    return { connected: false, installed: false, model: OLLAMA_MODEL, url: OLLAMA_BASE_URL };
-  }
-}
-
 async function handleApi(request: IncomingMessage, response: ServerResponse, url: URL): Promise<boolean> {
   if (url.pathname === "/api/health" && request.method === "GET") {
     const row = context.db.prepare("SELECT COUNT(*) AS count FROM knowledge_pages").get() as { count: number };
+    const chunks = getChunkStats(context);
+    const embedState = embeddingState();
     json(response, 200, {
       status: "ok",
       database_ready: true,
       page_count: row.count,
+      chunk_count: chunks.chunkCount,
+      chunk_index_ready: chunks.chunkCount > 0 || chunks.activeVersionCount === 0,
       source_count: getVisibleSources(context).length,
+      embedding: {
+        enabled: context.config.embedEnabled,
+        model: context.config.embedModel,
+        dim: embedState.dim,
+        ready: embedState.ready,
+        vector_count: context.chunks.countEmbedded(context.config.embedModel),
+        error: embedState.error,
+      },
       model: await modelStatus(),
     });
     return true;
@@ -300,7 +251,12 @@ const server = createServer(async (request, response) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`托育知护 API: http://127.0.0.1:${PORT}/api/health`);
-  console.log(`Ollama model: ${OLLAMA_MODEL} (${OLLAMA_BASE_URL})`);
+  void modelStatus().then((status) => {
+    console.log(`模型提供方: ${status.provider} · ${status.model} (${status.url}) · ${status.installed ? "可用" : "未就绪"}`);
+  });
+  void startEmbedder(context.config).then((embedder) => {
+    if (embedder) console.log(`本地向量模型: ${embedder.modelId} · ${embedder.dim} 维`);
+  });
 });
 
 function shutdown(): void {

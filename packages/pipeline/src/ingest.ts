@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { sha256File, sha256Text, type KnowledgeSource, type LegalStatus } from "@childcare/core";
+import { sha256File, sha256Text, type KnowledgeSource, type KnowledgeVersion, type LegalStatus } from "@childcare/core";
+import { indexVersionChunks } from "./chunk/index.js";
 import { fetchDocument } from "./collect/web.js";
 import type { PipelineContext } from "./context.js";
 import {
@@ -100,6 +101,16 @@ function defaultVersionLabel(prefix: string): string {
   return `${prefix}-${new Date().toISOString().slice(0, 10)}`;
 }
 
+/**
+ * Promote a version to be the source's only active version. Called after a new
+ * version is written, and when re-importing content that had been superseded.
+ */
+function activateVersion(ctx: PipelineContext, sourceId: string, version: KnowledgeVersion): void {
+  const current = ctx.versions.getActiveBySource(sourceId);
+  if (current?.id === version.id) return;
+  ctx.versions.setActiveExclusive(version.id, current?.id ?? null);
+}
+
 function filenameFromUrl(url: string, fallback: string): string {
   try {
     const name = basename(new URL(url).pathname);
@@ -124,6 +135,7 @@ export async function ingestFile(
 
     const existing = ctx.versions.findBySourceAndSha(source.id, sha256);
     if (existing) {
+      if (!existing.isActive) activateVersion(ctx, source.id, existing);
       ctx.runs.finish(run.id, {
         status: "succeeded",
         versionId: existing.id,
@@ -161,10 +173,12 @@ export async function ingestFile(
       effectiveFrom: opts.effectiveFrom ?? null,
       effectiveTo: opts.effectiveTo ?? null,
       legalStatus: opts.legalStatus ?? "unknown",
-      isActive: true,
+      isActive: false,
       ingestionRunId: run.id,
     });
     const { pageCount, charCount } = persistPages(ctx, version.id, extraction.pages);
+    indexVersionChunks(ctx.chunks, version.id, extraction.pages);
+    activateVersion(ctx, source.id, version);
     ctx.runs.finish(run.id, { status: "succeeded", versionId: version.id, pageCount, charCount });
     return {
       runId: run.id,
@@ -224,6 +238,7 @@ export async function ingestUrl(
 
     const existing = ctx.versions.findBySourceAndSha(source.id, sha256);
     if (existing) {
+      if (!existing.isActive) activateVersion(ctx, source.id, existing);
       ctx.runs.finish(run.id, {
         status: "succeeded",
         versionId: existing.id,
@@ -260,10 +275,12 @@ export async function ingestUrl(
       effectiveFrom: opts.effectiveFrom ?? null,
       effectiveTo: opts.effectiveTo ?? null,
       legalStatus: opts.legalStatus ?? "unknown",
-      isActive: true,
+      isActive: false,
       ingestionRunId: run.id,
     });
     const { pageCount, charCount } = persistPages(ctx, version.id, pages);
+    indexVersionChunks(ctx.chunks, version.id, pages);
+    activateVersion(ctx, source.id, version);
     ctx.runs.finish(run.id, { status: "succeeded", versionId: version.id, pageCount, charCount });
     return {
       runId: run.id,

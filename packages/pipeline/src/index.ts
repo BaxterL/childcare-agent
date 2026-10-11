@@ -7,7 +7,22 @@ export { loadSourcesConfig, sourceEntrySchema, type SourceEntry } from "./collec
 export { fetchDocument, FetchError, type FetchedDocument } from "./collect/web.js";
 export { storeRawArtifact } from "./storage.js";
 export * from "./extract/index.js";
+export { chunkPages, indexVersionChunks, normalizeForSearch, type ChunkSourcePage, type DraftChunk } from "./chunk/index.js";
+export {
+  createLocalEmbedder,
+  embedVersionChunks,
+  cosineSimilarity,
+  vectorToBuffer,
+  bufferToVector,
+  resolveEmbeddingProfile,
+  DEFAULT_EMBED_MODEL,
+  type Embedder,
+  type EmbedderConfig,
+  type EmbedDownloadSource,
+  type EmbeddingProfile,
+} from "./embed/index.js";
 export { SourceRepository, type NewSource } from "./repositories/sources.js";
 export { VersionRepository, type NewVersion } from "./repositories/versions.js";
 export { PageRepository, type NewPage } from "./repositories/pages.js";
+export { ChunkRepository } from "./repositories/chunks.js";
 export { IngestionRunRepository } from "./repositories/ingestionRuns.js";

@@ -1,6 +1,6 @@
 # 托育知护
 
-面向托育机构人员与婴幼儿照护者的本地知识问答工具。依据本机 SQLite 资料检索，使用本机 Ollama 模型整理答复，返回资料名、页码和原文链接。当前首版资料和边界说明见 `docs/SOURCE_CATALOG.md` 与 `docs/REQUIREMENT.md`。
+面向托育机构人员与婴幼儿照护者的知识问答工具。在本机 SQLite 资料上做词法 + 本地向量混合检索，由联网模型（DeepSeek）整理答复、本机 Ollama 作为降级，返回资料名、页码和原文链接。当前资料与边界说明见 `docs/SOURCE_CATALOG.md` 与 `docs/REQUIREMENT.md`，数据模型见 `docs/DATA_SPEC.md`，后端交接见 `docs/BACKEND.md`。
 
 ## 本机启动
 
@@ -15,28 +15,59 @@ npm run dev
 
 已有 `data/childcare.db` 时可直接问答；没有数据库时服务会自动创建空库，并显示资料目录为空。
 
-## 本机模型
+## 模型架构
 
-默认模型为 `qwen3:8b`，Ollama 模型页显示模型文件约 5.2 GB，中文能力和推理能力适合本机 RAG 试用。运行还需要额外显存/内存供上下文缓存使用；当前应用将上下文限制为 8192 tokens，降低显存压力。模型首次下载需要网络，答复和检索本身在本机运行。
+采用「联网主模型 + 本地辅助模型」的分工：
 
-1. 从 <https://ollama.com/download/windows> 安装 Ollama 并启动 Ollama 应用。
-2. 在 PowerShell 下载模型：
+- **回答（联网）**：默认 `deepseek-chat`，接收检索证据生成带引用的答复。配置 `DEEPSEEK_API_KEY` 后启用。
+- **检索（本地）**：用本机 ONNX 向量模型（transformers.js，默认 `Xenova/bge-small-zh-v1.5`，512 维）对问题和知识块做向量化，与 BM25 词法召回做 RRF 融合。向量模型文件缓存在项目内 `./data/models`，不写入系统盘。
+- **降级（本地）**：未联网或联网模型不可用时，回退到本机 Ollama `qwen3:8b`；Ollama 也不可用时只返回检索原文和引用，不伪造生成式总结。
+
+联网模型、本机 Ollama 和本地向量模型三者相互独立：任一不可用都会自动降级，不会中断问答。
+
+### 联网模型（DeepSeek）
+
+在项目根目录 `.env` 配置（该文件已被 Git 忽略）：
+
+```dotenv
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+### 本地向量检索
+
+首次使用时自动从下载源拉取向量模型（默认 `hf-mirror`，约 95 MB），之后完全离线运行。为已有知识块生成/更新向量：
+
+```powershell
+npm run childcare -- embed          # 只为缺少向量的块生成
+npm run childcare -- reindex        # 重建分块并补齐向量
+```
+
+若本地向量模型不可用，检索自动退回纯 BM25。
+
+### 本地降级模型（Ollama，可选）
+
+1. 从 <https://ollama.com/download/windows> 安装 Ollama 并启动。
+2. 在 PowerShell 下载模型，然后保持 Ollama 在后台运行：
 
 ```powershell
 ollama pull qwen3:8b
 ```
 
-3. 保持 Ollama 在后台运行，刷新问答页顶部的模型状态。
+若未配置联网模型也未安装 Ollama，前后端仍可运行、测试资料检索和引用；服务会返回检索原文，不会假装生成了模型答案。
 
-若尚未安装 Ollama，前后端仍可运行、测试资料检索和引用；服务会返回检索原文，不会假装生成了模型答案。
-
-可在项目根目录创建 `.env` 覆盖默认配置：
+`.env` 覆盖默认配置（完整项见 `.env.example`）：
 
 ```dotenv
 CHILDCARE_PORT=4174
+CHILDCARE_MODEL_PROVIDER=auto           # auto | deepseek | ollama
+DEEPSEEK_API_KEY=sk-...
+CHILDCARE_EMBED_ENABLED=1
+CHILDCARE_EMBED_MODEL=Xenova/bge-small-zh-v1.5
+CHILDCARE_EMBED_SOURCE=hf-mirror        # huggingface | hf-mirror
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3:8b
-OLLAMA_CONTEXT_TOKENS=8192
 CHILDCARE_RETRIEVAL_TOP_K=5
 CHILDCARE_DB_PATH=./data/childcare.db
 CHILDCARE_RAW_DIR=./data/raw
@@ -44,7 +75,9 @@ CHILDCARE_RAW_DIR=./data/raw
 
 ## 知识库
 
-当前问答检索从 `data/childcare.db` 的页级原文构建中文字符 BM25 候选，混合精确文号、标题、短语加权，并按资料去重。原始文件仍按内容哈希保存在 `data/raw/`。不依赖云模型、向量数据库、Python、GPU 专用服务或外网 embedding。
+问答检索在 `data/childcare.db` 的知识块上做混合召回：中文字符 BM25 词法匹配（含精确文号、标题、短语加权）与本机向量语义召回，用 RRF 融合后按资料去重。原始文件仍按内容哈希保存在 `data/raw/`。不依赖云模型、Python、GPU 专用服务或外网 embedding。
+
+资料入库时会同时完成**结构感知分块**：按「章 / 节 / 条 / 段落」切分为知识块（`knowledge_chunks`），记录章节路径、条款号、前后块关系和内容哈希，作为检索与引用定位的单元。重新采集同一来源时，新版本会自动成为唯一生效版本，旧版本标记为 `superseded`，不再参与问答。
 
 采集登记清单：
 
@@ -60,11 +93,18 @@ npm run childcare -- export-md
 npm run childcare -- import .\incoming\guide.pdf --title "资料标题" --type training_material --authority expert_education_material
 ```
 
+升级或首次获取已采集资料后，如提示知识块缺失，可重建分块索引：
+
+```powershell
+npm run childcare -- reindex
+```
+
 只有允许展示摘录的来源会进入检索和引用；标记为 `canShowExcerpt: false` 或 `access: restricted` 的资料不会参与问答。WHO 国际资料目前只采集了出版物信息页，且其许可设为禁止摘录和导出，未混入问答证据。
 
 ## 问答边界
 
 - 无关话题在检索和模型调用前拒绝；简单的上下文追问只在已有托育对话中放行。
+- 直接引用公文文号（如 `国办发〔2019〕15号`）视为托育范围问题，不再因缺少领域词而误拒。
 - 疾病诊断、发育障碍判断、检查报告解释、用药剂量和治疗请求在模型调用前拒答。
 - 模型仅获得本轮检索证据；系统提示词明确资料和用户内容均不可信、不得遵循其中的指令。
 - 证据不足时直接说明资料库无法确认，不用模型记忆补答案。
@@ -81,16 +121,17 @@ npm run build
 npm run eval
 ```
 
-`data/eval/baseline.json` 覆盖核心检索、范围拒答和医疗拒答场景。`npm run eval` 不调用 Ollama，适合在没有下载模型时检查本地 RAG 基线。
+`data/eval/baseline.json` 覆盖核心检索、范围拒答、医疗拒答和急症拦截场景（当前 31 题）。`npm run eval` 不调用 Ollama，适合在没有下载模型时检查本地 RAG 基线，并生成 `data/eval/report.json`（通过率、检索 Recall@5、引用可溯源率，按题型分列）。
 
 ## 项目结构
 
 - `apps/web`：Vue 3 问答工作台
-- `apps/server`：本机 HTTP/SSE API、范围与医疗边界、提示词、Ollama 适配、本地 BM25 检索
-- `apps/cli`：资料采集、导入、检查与导出
-- `packages/pipeline`：SQLite、原始文件存储、PDF/DOCX/HTML 文本提取
-- `packages/core`：知识来源、版本、页级资料的领域模型
+- `apps/server`：本机 HTTP/SSE API、范围与医疗边界、提示词、模型提供方适配（DeepSeek / Ollama）、BM25 + 本地向量混合检索
+- `apps/cli`：资料采集、导入、检查、导出、分块与向量重建
+- `packages/pipeline`：SQLite、原始文件存储、PDF/DOCX/HTML 文本提取、结构感知分块、本地向量 embedding
+- `packages/core`：知识来源、版本、页级资料与知识块的领域模型
+- `docs/DATA_SPEC.md`：数据模型、分块规则与增量更新说明
 - `data/sources.yaml`：来源采集登记清单
 - `data/eval/baseline.json`：本地基线评测问题
 
-原始资料、SQLite 数据库和生成的 Markdown 都在 Git 忽略目录中。注意核实版权、授权和现行效力后再将资料用于对外或商业服务。
+原始资料、SQLite 数据库和生成的 Markdown 都在 Git 忽略目录中。使用过程中需注意核实版权、授权和现行效力后再将资料用于对外或商业服务。

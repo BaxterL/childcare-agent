@@ -88,4 +88,49 @@ describe("ingestFile", () => {
     expect(second.deduplicated).toBe(true);
     expect(second.versionId).toBe(first.versionId);
   });
+
+  it("builds chunks for an imported version", async () => {
+    const { ctx, dir } = await makeContext();
+    const file = join(dir, "policy.md");
+    await writeFile(file, "第一章 总则\n第一条 托育机构应当建立安全管理制度，明确责任人和检查频次。", "utf8");
+
+    const result = await ingestFile(ctx, file, { source });
+    const chunks = ctx.chunks.listByVersion(result.versionId!);
+
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.some((chunk) => chunk.text.includes("安全管理制度"))).toBe(true);
+  });
+
+  it("supersedes the previous active version when content changes", async () => {
+    const { ctx, dir } = await makeContext();
+    const file = join(dir, "policy.md");
+    await writeFile(file, "旧版内容：托育机构午睡巡视每三十分钟一次。", "utf8");
+    const first = await ingestFile(ctx, file, { source });
+
+    await writeFile(file, "新版内容：托育机构午睡巡视每十五分钟一次。", "utf8");
+    const second = await ingestFile(ctx, file, { source });
+
+    expect(second.versionId).not.toBe(first.versionId);
+    expect(ctx.versions.findById(first.versionId!)?.isActive).toBe(false);
+    const active = ctx.versions.getActiveBySource(second.sourceId);
+    expect(active?.id).toBe(second.versionId);
+    expect(active?.supersedesVersionId).toBe(first.versionId);
+  });
+
+  it("reactivates a previously superseded version when its content returns", async () => {
+    const { ctx, dir } = await makeContext();
+    const file = join(dir, "policy.md");
+    await writeFile(file, "内容A：托育机构应当建立安全管理制度。", "utf8");
+    const first = await ingestFile(ctx, file, { source });
+    await writeFile(file, "内容B：托育机构应当建立卫生消毒制度。", "utf8");
+    await ingestFile(ctx, file, { source });
+    expect(ctx.versions.findById(first.versionId!)?.isActive).toBe(false);
+
+    await writeFile(file, "内容A：托育机构应当建立安全管理制度。", "utf8");
+    const again = await ingestFile(ctx, file, { source });
+
+    expect(again.deduplicated).toBe(true);
+    expect(again.versionId).toBe(first.versionId);
+    expect(ctx.versions.findById(first.versionId!)?.isActive).toBe(true);
+  });
 });

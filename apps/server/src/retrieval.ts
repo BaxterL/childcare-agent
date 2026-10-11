@@ -1,7 +1,8 @@
-import type { PipelineContext } from "@childcare/pipeline";
+import { bufferToVector, cosineSimilarity, type PipelineContext } from "@childcare/pipeline";
 
 export interface Evidence {
   index: number;
+  chunkId: string;
   sourceId: string;
   versionId: string;
   title: string;
@@ -12,12 +13,13 @@ export interface Evidence {
   publishedAt: string | null;
   pageNumber: number;
   section: string;
+  articleNumber: string | null;
   text: string;
   score: number;
 }
 
 interface Candidate {
-  contentHash: string;
+  chunkId: string;
   sourceId: string;
   versionId: string;
   title: string;
@@ -27,13 +29,17 @@ interface Candidate {
   legalStatus: string;
   publishedAt: string | null;
   pageNumber: number;
+  sectionPath: string | null;
+  articleNumber: string | null;
   text: string;
   terms: Map<string, number>;
+  vector: Float32Array | null;
 }
 
 const STOP = new Set("什么 哪些 怎么 如何 有哪些 可以 需要 规定 要求 关于 以及 这个 那个 一下 请问 托育机构 婴幼儿".split(" "));
-const MAX_CHUNK = 620;
-const CHUNK_OVERLAP = 90;
+const PER_SOURCE_LIMIT = 2;
+const BM25_THRESHOLD = 0.55;
+const RRF_K = 60;
 
 export function tokenize(text: string): string[] {
   const normalized = text.toLowerCase().replace(/\s+/g, " ");
@@ -51,92 +57,78 @@ export function tokenize(text: string): string[] {
   return [...terms];
 }
 
-function makeChunks(text: string): string[] {
-  const clean = text.replace(/\r/g, "").replace(/[\t ]+/g, " ").trim();
-  if (!clean) return [];
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < clean.length) {
-    let end = Math.min(clean.length, start + MAX_CHUNK);
-    if (end < clean.length) {
-      const boundary = Math.max(
-        clean.lastIndexOf("。", end),
-        clean.lastIndexOf("；", end),
-        clean.lastIndexOf("\n", end),
-      );
-      if (boundary > start + MAX_CHUNK * 0.55) end = boundary + 1;
-    }
-    const chunk = clean.slice(start, end).trim();
-    if (chunk.length >= 24) chunks.push(chunk);
-    if (end >= clean.length) break;
-    start = Math.max(start + 1, end - CHUNK_OVERLAP);
-  }
-  return chunks;
-}
-
-export function loadCandidates(context: PipelineContext): Candidate[] {
-  const rows = context.db.prepare(`
-    SELECT v.sha256 AS content_hash, s.id AS source_id, s.canonical_title, s.issuing_org, s.document_no,
-           s.source_url, s.access_level, s.can_show_excerpt,
-           v.id AS version_id, v.legal_status, v.published_at, p.page_number, p.clean_text
-    FROM knowledge_sources s
-    JOIN knowledge_versions v ON v.source_id = s.id AND v.is_active = 1
-    JOIN knowledge_pages p ON p.version_id = v.id
-    WHERE s.can_show_excerpt = 1 AND s.access_level != 'restricted'
-      AND p.is_empty = 0
-    ORDER BY v.published_at DESC, s.created_at ASC, p.page_number ASC
-  `).all() as Array<Record<string, unknown>>;
-
-  const candidates: Candidate[] = [];
-  const seenPages = new Set<string>();
-  for (const row of rows) {
-    const pageText = String(row.clean_text ?? "");
-    const contentHash = String(row.content_hash ?? row.version_id);
-    const pageKey = `${contentHash}:${row.page_number}`;
-    if (seenPages.has(pageKey)) continue;
-    seenPages.add(pageKey);
-    for (const text of makeChunks(pageText)) {
-      candidates.push({
-        contentHash,
-        sourceId: String(row.source_id),
-        versionId: String(row.version_id),
-        title: String(row.canonical_title),
-        organization: String(row.issuing_org ?? "未登记"),
-        documentNo: row.document_no ? String(row.document_no) : null,
-        sourceUrl: row.source_url ? String(row.source_url) : null,
-        legalStatus: String(row.legal_status),
-        publishedAt: row.published_at ? String(row.published_at) : null,
-        pageNumber: Number(row.page_number),
-        text,
-        terms: termFrequency(text),
-      });
-    }
-  }
-  return candidates;
-}
-
 function termFrequency(text: string): Map<string, number> {
   const frequencies = new Map<string, number>();
   for (const term of tokenize(text)) frequencies.set(term, (frequencies.get(term) ?? 0) + 1);
   return frequencies;
 }
 
-export function searchEvidence(context: PipelineContext, question: string, limit = 5): Evidence[] {
+/** Human-readable section label for a chunk: chapter/section plus article. */
+export function sectionLabel(sectionPath: string | null, articleNumber: string | null): string {
+  const parts = [sectionPath, articleNumber].filter((part): part is string => Boolean(part && part.trim()));
+  return parts.length ? parts.join(" · ") : "正文";
+}
+
+/**
+ * Load every chunk allowed into evidence: active versions of sources whose
+ * licence permits excerpting, including any stored embedding vector.
+ */
+export function loadCandidates(context: PipelineContext): Candidate[] {
+  const rows = context.db.prepare(`
+    SELECT c.id AS chunk_id, c.version_id, c.text, c.section_path, c.article_number, c.page_start,
+           c.embedding,
+           s.id AS source_id, s.canonical_title, s.issuing_org, s.document_no, s.source_url,
+           v.legal_status, v.published_at
+    FROM knowledge_chunks c
+    JOIN knowledge_versions v ON v.id = c.version_id AND v.is_active = 1
+    JOIN knowledge_sources s ON s.id = v.source_id
+    WHERE s.can_show_excerpt = 1 AND s.access_level != 'restricted' AND c.char_count > 0
+    ORDER BY v.published_at DESC, s.created_at ASC, c.chunk_index ASC
+  `).all() as Array<Record<string, unknown>>;
+
+  return rows.map((row) => {
+    const text = String(row.text ?? "");
+    return {
+      chunkId: String(row.chunk_id),
+      sourceId: String(row.source_id),
+      versionId: String(row.version_id),
+      title: String(row.canonical_title),
+      organization: String(row.issuing_org ?? "未登记"),
+      documentNo: row.document_no ? String(row.document_no) : null,
+      sourceUrl: row.source_url ? String(row.source_url) : null,
+      legalStatus: String(row.legal_status),
+      publishedAt: row.published_at ? String(row.published_at) : null,
+      pageNumber: Number(row.page_start),
+      sectionPath: row.section_path ? String(row.section_path) : null,
+      articleNumber: row.article_number ? String(row.article_number) : null,
+      text,
+      terms: termFrequency(text),
+      vector: row.embedding ? bufferToVector(row.embedding as Uint8Array) : null,
+    };
+  });
+}
+
+interface Scored {
+  candidate: Candidate;
+  score: number;
+}
+
+/** Lexical BM25 score plus exact-document-number, title and phrase bonuses. */
+function scoreBm25(candidates: Candidate[], question: string): Scored[] {
   const queryTerms = tokenize(question);
   if (!queryTerms.length) return [];
-  const candidates = loadCandidates(context);
-  if (!candidates.length) return [];
-
   const documentFrequency = new Map<string, number>();
   for (const candidate of candidates) {
     for (const term of candidate.terms.keys()) {
       documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
     }
   }
-  const averageLength = candidates.reduce((sum, item) => sum + [...item.terms.values()].reduce((a, b) => a + b, 0), 0) / candidates.length || 1;
+  const averageLength =
+    candidates.reduce((sum, item) => sum + [...item.terms.values()].reduce((a, b) => a + b, 0), 0) /
+      candidates.length || 1;
   const normalizedQuestion = question.toLowerCase().replace(/[\s，。！？、]/g, "");
 
-  const scored = candidates.map((candidate) => {
+  return candidates.map((candidate) => {
     const length = [...candidate.terms.values()].reduce((a, b) => a + b, 0);
     let score = 0;
     for (const term of queryTerms) {
@@ -151,21 +143,80 @@ export function searchEvidence(context: PipelineContext, question: string, limit
     if (candidate.documentNo && question.includes(candidate.documentNo)) score += 4;
     if (candidate.title && question.includes(candidate.title)) score += 2;
     return { candidate, score };
-  }).filter((item) => item.score >= 0.55)
-    .sort((a, b) => b.score - a.score || a.candidate.sourceId.localeCompare(b.candidate.sourceId));
+  });
+}
 
-  const selected: typeof scored = [];
+function selectDiverse(sorted: Scored[], limit: number): Scored[] {
+  const selected: Scored[] = [];
   const sourceCount = new Map<string, number>();
-  for (const item of scored) {
+  for (const item of sorted) {
     const count = sourceCount.get(item.candidate.sourceId) ?? 0;
-    if (count >= 2) continue;
+    if (count >= PER_SOURCE_LIMIT) continue;
     selected.push(item);
     sourceCount.set(item.candidate.sourceId, count + 1);
     if (selected.length >= Math.max(1, Math.min(limit, 8))) break;
   }
+  return selected;
+}
+
+/**
+ * Reciprocal-rank fusion of lexical and semantic rankings. Rank-based fusion
+ * avoids having to calibrate BM25 and cosine on a shared scale.
+ */
+function fuseHybrid(scored: Scored[], queryVector: Float32Array): Scored[] {
+  const lexicalRank = new Map<string, number>();
+  scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .forEach((item, index) => lexicalRank.set(item.candidate.chunkId, index + 1));
+
+  const semanticRank = new Map<string, number>();
+  scored
+    .map((item) => ({
+      candidate: item.candidate,
+      cosine: item.candidate.vector ? cosineSimilarity(queryVector, item.candidate.vector) : -1,
+    }))
+    .filter((item) => item.cosine > 0)
+    .sort((a, b) => b.cosine - a.cosine)
+    .forEach((item, index) => semanticRank.set(item.candidate.chunkId, index + 1));
+
+  return scored
+    .map((item) => {
+      const lexical = lexicalRank.get(item.candidate.chunkId);
+      const semantic = semanticRank.get(item.candidate.chunkId);
+      const score = (lexical ? 1 / (RRF_K + lexical) : 0) + (semantic ? 1 / (RRF_K + semantic) : 0);
+      return { candidate: item.candidate, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.candidate.sourceId.localeCompare(b.candidate.sourceId));
+}
+
+/**
+ * Retrieve evidence for a question. With a query vector, lexical and local
+ * semantic rankings are fused; without one (no local model available) it falls
+ * back to pure BM25.
+ */
+export function searchEvidence(
+  context: PipelineContext,
+  question: string,
+  limit = 5,
+  queryVector: Float32Array | null = null,
+): Evidence[] {
+  const candidates = loadCandidates(context);
+  if (!candidates.length) return [];
+  const scored = scoreBm25(candidates, question);
+  if (!scored.length) return [];
+
+  const ranked = queryVector
+    ? fuseHybrid(scored, queryVector)
+    : scored
+        .filter((item) => item.score >= BM25_THRESHOLD)
+        .sort((a, b) => b.score - a.score || a.candidate.sourceId.localeCompare(b.candidate.sourceId));
+  const selected = selectDiverse(ranked, limit);
 
   return selected.map(({ candidate, score }, index) => ({
     index: index + 1,
+    chunkId: candidate.chunkId,
     sourceId: candidate.sourceId,
     versionId: candidate.versionId,
     title: candidate.title,
@@ -175,15 +226,11 @@ export function searchEvidence(context: PipelineContext, question: string, limit
     legalStatus: candidate.legalStatus,
     publishedAt: candidate.publishedAt,
     pageNumber: candidate.pageNumber,
-    section: findSection(candidate.text),
+    section: sectionLabel(candidate.sectionPath, candidate.articleNumber),
+    articleNumber: candidate.articleNumber,
     text: candidate.text,
-    score: Number(score.toFixed(3)),
+    score: Number(score.toFixed(4)),
   }));
-}
-
-function findSection(text: string): string {
-  const heading = text.match(/(?:第[一二三四五六七八九十百]+章[^\n。]{0,40}|第[一二三四五六七八九十百]+条|[一二三四五六七八九十]+、[^\n。]{0,30})/);
-  return heading?.[0] ?? "正文";
 }
 
 export function getVisibleSources(context: PipelineContext): Array<Record<string, unknown>> {
@@ -221,4 +268,11 @@ export function getVisiblePage(context: PipelineContext, sourceId: string, pageN
       AND p.page_number = ?
     ORDER BY v.created_at DESC LIMIT 1
   `).get(sourceId, pageNumber) as Record<string, unknown> | undefined ?? null;
+}
+
+/** Count searchable chunks and the active versions they cover, for health. */
+export function getChunkStats(context: PipelineContext): { chunkCount: number; activeVersionCount: number } {
+  const chunkRow = context.db.prepare("SELECT COUNT(*) AS n FROM knowledge_chunks").get() as { n: number };
+  const versionRow = context.db.prepare("SELECT COUNT(*) AS n FROM knowledge_versions WHERE is_active = 1").get() as { n: number };
+  return { chunkCount: chunkRow.n, activeVersionCount: versionRow.n };
 }

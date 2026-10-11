@@ -36,4 +36,15 @@ describe("托育问答边界", () => {
     expect(hasDomainSignal("请问托育备案需要什么资料？")).toBe(true);
     expect(hasDomainSignal("今天有什么天气" )).toBe(false);
   });
+
+  it("把公文文号视为托育领域信号", () => {
+    expect(isInDomain("国办发〔2019〕15号提出了哪些要求？", [])).toBe(true);
+    expect(isInDomain("国卫人口发〔2019〕58号包含哪些内容？", [])).toBe(true);
+  });
+
+  it("拒答发育障碍判断，但不误伤机构照护问题", () => {
+    expect(isMedicalRequest("孩子发育迟缓怎么办？")).toBe(true);
+    expect(isMedicalRequest("孩子是不是自闭症？")).toBe(true);
+    expect(isMedicalRequest("托育机构如何支持语言发育迟缓的婴幼儿？")).toBe(false);
+  });
 });

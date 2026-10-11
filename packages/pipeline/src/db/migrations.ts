@@ -82,4 +82,36 @@ export const migrations: string[] = [
   );
   CREATE INDEX idx_runs_started ON ingestion_runs(started_at);
   `,
+
+  /* 002 — structure-aware chunks for retrieval and citation (PROJECT_PLAN 7.4) */
+  `
+  CREATE TABLE knowledge_chunks (
+    id               TEXT PRIMARY KEY,
+    version_id       TEXT NOT NULL REFERENCES knowledge_versions(id) ON DELETE CASCADE,
+    chunk_index      INTEGER NOT NULL,
+    page_start       INTEGER NOT NULL,
+    page_end         INTEGER NOT NULL,
+    section_path     TEXT,
+    article_number   TEXT,
+    paragraph_number INTEGER,
+    content_type     TEXT NOT NULL DEFAULT 'body',
+    text             TEXT NOT NULL,
+    normalized_text  TEXT NOT NULL,
+    chunk_hash       TEXT NOT NULL,
+    char_count       INTEGER NOT NULL DEFAULT 0,
+    previous_chunk_id TEXT,
+    next_chunk_id    TEXT,
+    created_at       TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX idx_chunks_version_index ON knowledge_chunks(version_id, chunk_index);
+  CREATE INDEX idx_chunks_version ON knowledge_chunks(version_id);
+  CREATE INDEX idx_chunks_article ON knowledge_chunks(article_number);
+  CREATE INDEX idx_chunks_hash ON knowledge_chunks(chunk_hash);
+  `,
+
+  /* 003 — local embedding vectors attached to chunks (semantic retrieval) */
+  `
+  ALTER TABLE knowledge_chunks ADD COLUMN embedding BLOB;
+  ALTER TABLE knowledge_chunks ADD COLUMN embedding_model TEXT;
+  `,
 ];

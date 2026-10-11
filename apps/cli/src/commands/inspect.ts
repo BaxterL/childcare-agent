@@ -61,6 +61,33 @@ export function registerInspect(program: Command): void {
     });
 
   program
+    .command("chunks")
+    .description("查看某个版本的知识块（分块与章节/条款标注）")
+    .argument("<versionId>", "版本 id")
+    .option("--limit <n>", "最多显示块数", "20")
+    .option("--json", "以 JSON 输出", false)
+    .action((versionId: string, options: { limit: string; json: boolean }) => {
+      const ctx = createContext();
+      const chunks = ctx.chunks.listByVersion(versionId);
+      ctx.db.close();
+      if (options.json) {
+        printJson(chunks);
+        return;
+      }
+      if (chunks.length === 0) {
+        console.log("该版本暂无知识块。可运行 `childcare reindex` 回填。");
+        return;
+      }
+      const limit = Number(options.limit);
+      for (const chunk of chunks.slice(0, limit)) {
+        const label = [chunk.sectionPath, chunk.articleNumber].filter(Boolean).join(" · ") || "正文";
+        console.log(`#${chunk.chunkIndex}  [${chunk.contentType}]  第${chunk.pageStart}页  ${label}`);
+        console.log(`   ${chunk.text.slice(0, 120).replace(/\n/g, " ")}${chunk.text.length > 120 ? "…" : ""}`);
+      }
+      console.log(`共 ${chunks.length} 块。`);
+    });
+
+  program
     .command("runs")
     .description("查看最近的导入 / 采集运行记录")
     .option("--limit <n>", "返回条数", "20")

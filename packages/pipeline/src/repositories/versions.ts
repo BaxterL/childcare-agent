@@ -150,6 +150,37 @@ export class VersionRepository {
     return rows.map(map);
   }
 
+  /** The single version currently serving a source, or null. */
+  getActiveBySource(sourceId: string): KnowledgeVersion | null {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM knowledge_versions WHERE source_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(sourceId) as VersionRow | undefined;
+    return row ? map(row) : null;
+  }
+
+  /**
+   * Make one version the active version for its source and deactivate every
+   * sibling, recording the superseded version. Keeping at most one active
+   * version per source is what makes "new content takes effect" hold and keeps
+   * outdated material out of retrieval.
+   */
+  setActiveExclusive(versionId: string, supersedesId: string | null): void {
+    const apply = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE knowledge_versions SET is_active = 0
+           WHERE source_id = (SELECT source_id FROM knowledge_versions WHERE id = ?) AND id != ?`,
+        )
+        .run(versionId, versionId);
+      this.db
+        .prepare("UPDATE knowledge_versions SET is_active = 1, supersedes_version_id = ? WHERE id = ?")
+        .run(supersedesId, versionId);
+    });
+    apply();
+  }
+
   list(): KnowledgeVersion[] {
     const rows = this.db
       .prepare("SELECT * FROM knowledge_versions ORDER BY created_at DESC")

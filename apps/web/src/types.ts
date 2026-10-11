@@ -1,5 +1,6 @@
 export interface SourceRef {
   index: number;
+  chunkId: string;
   sourceId: string;
   versionId: string;
   title: string;
@@ -10,6 +11,7 @@ export interface SourceRef {
   publishedAt: string | null;
   pageNumber: number;
   section: string;
+  articleNumber: string | null;
   excerpt: string;
 }
 
@@ -46,6 +48,7 @@ export interface ChatSession {
 }
 
 export interface ModelStatus {
+  provider: string;
   connected: boolean;
   installed: boolean;
   model: string;

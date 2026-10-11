@@ -15,6 +15,8 @@ data/collected/
 data/staging/
 data/processed/
 data/releases/
+data/models/
+data/ollama/
 data/*.db
 data/*.db-wal
 data/*.db-shm
@@ -23,6 +25,8 @@ data/chroma/
 # Manifests and eval sets are meant to be committed
 !data/manifests/
 !data/eval/
+# Generated evaluation report is rebuilt by `npm run eval`
+data/eval/report.json
 
 # Logs
 *.log
@@ -36,3 +40,5 @@ Thumbs.db
 
 # Local tool config
 .commandcode/
+# Portable Ollama runtime and its download (stay on D:, not the user profile)
+tools/

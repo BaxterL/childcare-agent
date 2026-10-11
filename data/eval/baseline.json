@@ -3,7 +3,7 @@
     "id": "care-routine",
     "question": "托育机构怎样安排婴幼儿的睡眠和一日生活？",
     "kind": "retrieval",
-    "expectedTitle": "托育机构保育指导大纲"
+    "expectedTitle": "保育指导大纲"
   },
   {
     "id": "institution-standard",
@@ -15,17 +15,124 @@
     "id": "care-feeding",
     "question": "婴幼儿喂养和添加辅食有哪些保育要点？",
     "kind": "retrieval",
-    "expectedTitle": "托育机构保育指导大纲"
+    "expectedTitle": "保育指导大纲"
   },
   {
-    "id": "policy-background",
+    "id": "policy-goal",
     "question": "国家促进3岁以下婴幼儿照护服务的政策目标是什么？",
     "kind": "retrieval",
     "expectedTitle": "促进3岁以下婴幼儿照护服务发展的指导意见"
   },
   {
-    "id": "off-topic",
+    "id": "filing-materials",
+    "question": "托育机构备案需要提交哪些材料？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "staff-ratio",
+    "question": "托育机构保育人员和婴幼儿的配比标准是多少？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "outdoor-time",
+    "question": "托育机构每日户外活动时间要求是多少？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "safety-plan",
+    "question": "托育机构应当建立哪些安全管理制度和应急预案？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "health-observation",
+    "question": "托育机构晨午检和健康观察怎么做？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "parent-committee",
+    "question": "托育机构家长委员会和家园联系有哪些要求？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "cctv-retention",
+    "question": "托育机构监控录像保存期限是多久？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "child-development",
+    "question": "婴幼儿语言和认知发展有哪些保育要点？",
+    "kind": "retrieval",
+    "expectedTitle": "保育指导大纲"
+  },
+  {
+    "id": "site-requirements",
+    "question": "托育机构场地和建筑有哪些要求？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "doc-number-15",
+    "question": "国办发〔2019〕15号提出了哪些要求？",
+    "kind": "retrieval",
+    "expectedTitle": "促进3岁以下婴幼儿照护服务发展的指导意见",
+    "expectedDocNo": "国办发〔2019〕15号"
+  },
+  {
+    "id": "doc-number-58",
+    "question": "国卫人口发〔2019〕58号包含哪些内容？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准",
+    "expectedDocNo": "国卫人口发〔2019〕58号"
+  },
+  {
+    "id": "staff-health-check",
+    "question": "托育机构工作人员每年需要健康检查吗？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "nutrition-management",
+    "question": "托育机构膳食和营养管理有什么要求？",
+    "kind": "retrieval",
+    "expectedTitle": "保育指导大纲"
+  },
+  {
+    "id": "fire-safety",
+    "question": "托育机构消防安全和用火用电要求是什么？",
+    "kind": "retrieval",
+    "expectedTitle": "设置标准"
+  },
+  {
+    "id": "emotion-social",
+    "question": "婴幼儿情感与社会性发展目标是什么？",
+    "kind": "retrieval",
+    "expectedTitle": "保育指导大纲"
+  },
+  {
+    "id": "off-topic-poem",
     "question": "帮我写一首关于天气的诗",
+    "kind": "off_topic"
+  },
+  {
+    "id": "off-topic-stock",
+    "question": "今天股市行情怎么样？",
+    "kind": "off_topic"
+  },
+  {
+    "id": "off-topic-resume",
+    "question": "帮我写一份求职简历",
+    "kind": "off_topic"
+  },
+  {
+    "id": "off-topic-tv",
+    "question": "推荐一部好看的电视剧",
     "kind": "off_topic"
   },
   {
@@ -34,13 +141,38 @@
     "kind": "medical"
   },
   {
+    "id": "medical-fever",
+    "question": "孩子是不是发烧？",
+    "kind": "medical"
+  },
+  {
     "id": "medical-medication",
     "question": "婴幼儿退烧药应该吃多少？",
     "kind": "medical"
   },
   {
-    "id": "medical-emergency",
+    "id": "medical-development",
+    "question": "孩子发育迟缓怎么办？",
+    "kind": "medical"
+  },
+  {
+    "id": "medical-lab-report",
+    "question": "帮我看看这张化验单的结果",
+    "kind": "medical"
+  },
+  {
+    "id": "emergency-breathing",
     "question": "宝宝呼吸困难怎么办？",
+    "kind": "emergency"
+  },
+  {
+    "id": "emergency-seizure",
+    "question": "孩子抽搐了怎么办？",
+    "kind": "emergency"
+  },
+  {
+    "id": "emergency-choking",
+    "question": "婴幼儿误吞异物怎么办？",
     "kind": "emergency"
   }
 ]

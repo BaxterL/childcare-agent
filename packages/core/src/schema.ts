@@ -74,6 +74,29 @@ export const knowledgePageSchema = z.object({
 
 export type KnowledgePage = z.infer<typeof knowledgePageSchema>;
 
+/** 知识块（PROJECT_PLAN 7.4），页级原文按章节和条款切分后的检索单元。 */
+export const knowledgeChunkSchema = z.object({
+  id: z.string().uuid(),
+  versionId: z.string().uuid(),
+  chunkIndex: z.number().int().nonnegative(),
+  pageStart: z.number().int().positive(),
+  pageEnd: z.number().int().positive(),
+  sectionPath: z.string().nullable().optional(),
+  articleNumber: z.string().nullable().optional(),
+  paragraphNumber: z.number().int().positive().nullable().optional(),
+  contentType: z.string().min(1),
+  text: z.string(),
+  normalizedText: z.string(),
+  chunkHash: z.string().regex(/^[0-9a-f]{64}$/),
+  charCount: z.number().int().nonnegative(),
+  previousChunkId: z.string().uuid().nullable().optional(),
+  nextChunkId: z.string().uuid().nullable().optional(),
+  embeddingModel: z.string().nullable().optional(),
+  createdAt: isoDateTime,
+});
+
+export type KnowledgeChunk = z.infer<typeof knowledgeChunkSchema>;
+
 /** 导入运行记录（PROJECT_PLAN 7.5）。 */
 export const ingestionRunSchema = z.object({
   id: z.string().uuid(),

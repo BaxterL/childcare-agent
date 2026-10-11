@@ -118,3 +118,8 @@ export type ExtractionMethod = z.infer<typeof extractionMethodSchema>;
 export const INGESTION_STATUSES = ["running", "succeeded", "failed"] as const;
 export const ingestionStatusSchema = z.enum(INGESTION_STATUSES);
 export type IngestionStatus = z.infer<typeof ingestionStatusSchema>;
+
+/** 知识块内容类型（PROJECT_PLAN 7.4），用于区分正文、标题、列表和表格。 */
+export const CHUNK_CONTENT_TYPES = ["heading", "body", "list", "table", "attachment"] as const;
+export const chunkContentTypeSchema = z.enum(CHUNK_CONTENT_TYPES);
+export type ChunkContentType = z.infer<typeof chunkContentTypeSchema>;

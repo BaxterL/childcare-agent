@@ -17,9 +17,13 @@ const MEDICAL_PATTERNS = [
   /(发烧|发热|咳嗽|腹泻|呕吐|皮疹|湿疹|便秘|感染|肺炎|感冒).{0,12}(怎么办|怎么处理|如何|要不要|需要吗)/,
   /(吃什么药|用什么药|用药|药量|剂量|服药|停药|退烧药|抗生素)/,
   /(治疗方案|治疗方法|化验单|检验报告|影像报告|处方)/,
+  /(发育迟缓|发育障碍|自闭症|孤独症|多动症|语言发育|运动发育).{0,10}(怎么办|怎么处理|如何改善|要不要|需要吗|正常吗|怎么治疗|怎么干预|怎么康复)/,
 ];
 
 const EMERGENCY_PATTERN = /(呼吸困难|窒息|严重出血|抽搐|昏迷|无意识|溺水|误吞异物|严重过敏)/;
+
+/** 中文公文文号形态，如 国办发〔2019〕15号；引用文号即视为托育政策问答。 */
+const DOC_NUMBER_PATTERN = /〔\s*\d{4}\s*〕\s*\d+\s*号/;
 
 export const OUT_OF_DOMAIN_ANSWER =
   "这个问题不属于托育与婴幼儿照护知识范围。我可以帮你查托育机构管理、日常保育、卫生安全、喂养睡眠和0—3岁照护资料。";
@@ -31,7 +35,7 @@ export const EMERGENCY_ANSWER =
   "这可能是紧急情况，请立即拨打当地急救电话（中国大陆为120），并按现场受训人员的急救流程处理；不要等待线上答复。尽快通知监护人。";
 
 export function hasDomainSignal(text: string): boolean {
-  return DOMAIN_TERMS.some((term) => text.includes(term));
+  return DOC_NUMBER_PATTERN.test(text) || DOMAIN_TERMS.some((term) => text.includes(term));
 }
 
 export function isOffTopic(text: string): boolean {

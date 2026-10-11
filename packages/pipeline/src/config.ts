@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { DEFAULT_EMBED_MODEL, type EmbedDownloadSource } from "./embed/index.js";
 
 export interface PipelineConfig {
   /** SQLite database file. */
@@ -11,6 +12,14 @@ export interface PipelineConfig {
   fetchTimeoutMs: number;
   /** Maximum bytes to download per document. */
   maxDownloadBytes: number;
+  /** Whether local embedding-based semantic retrieval is available. */
+  embedEnabled: boolean;
+  /** Local embedding model id (transformers.js / Hugging Face). */
+  embedModel: string;
+  /** Project-local cache directory for downloaded ONNX weights. */
+  embedCacheDir: string;
+  /** Where to download embedding model files from. */
+  embedDownloadSource: EmbedDownloadSource;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -18,6 +27,17 @@ function envInt(name: string, fallback: number): number {
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return !["0", "false", "off", "no"].includes(raw.trim().toLowerCase());
+}
+
+function envChoice<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
+  const raw = process.env[name]?.trim() as T | undefined;
+  return raw && allowed.includes(raw) ? raw : fallback;
 }
 
 /** Resolve runtime configuration from environment variables with sane defaults. */
@@ -32,5 +52,10 @@ export function loadConfig(overrides: Partial<PipelineConfig> = {}): PipelineCon
     fetchTimeoutMs: overrides.fetchTimeoutMs ?? envInt("CHILDCARE_FETCH_TIMEOUT_MS", 30_000),
     maxDownloadBytes:
       overrides.maxDownloadBytes ?? envInt("CHILDCARE_MAX_DOWNLOAD_BYTES", 50 * 1024 * 1024),
+    embedEnabled: overrides.embedEnabled ?? envBool("CHILDCARE_EMBED_ENABLED", true),
+    embedModel: overrides.embedModel ?? process.env.CHILDCARE_EMBED_MODEL ?? DEFAULT_EMBED_MODEL,
+    embedCacheDir: overrides.embedCacheDir ?? resolve(process.env.CHILDCARE_EMBED_CACHE_DIR ?? "./data/models"),
+    embedDownloadSource:
+      overrides.embedDownloadSource ?? envChoice("CHILDCARE_EMBED_SOURCE", ["huggingface", "hf-mirror"], "hf-mirror"),
   };
 }
