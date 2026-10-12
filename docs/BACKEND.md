@@ -72,7 +72,7 @@ tests/            跨包测试
 ## 4. 问答流程（`chat()`）
 
 1. `readJson`（上限 64KB）→ 问题 trim 后 ≤3000 字；`history` 取最后 8 条（每条 ≤2400 字，仅 user/assistant）。
-2. **前置边界门**（`safety.ts` 的 `refusalAnswer`，命中即确定性回答，`done.model = "deterministic"`，**不调模型**）：急症、伤害与体罚、危险睡姿或混药、伪造材料、诊断用药与就医/疫苗判断、规避监管、代替负责人拍板、赔偿裁决、0—3 岁以外、套取提示词。未命中再判超域（`OUT_OF_DOMAIN_ANSWER`）。
+2. **前置边界门**（`safety.ts` 的 `refusalAnswer`，命中即确定性回答，`done.model = "deterministic"`，**不调模型**）：急症、伤害与体罚、危险睡姿或混药、伪造材料、诊断用药与就医/疫苗判断、规避监管、代替负责人拍板、赔偿裁决、0—3 岁以外、套取提示词。寒暄和自我介绍走固定介绍。其余问题按项目咨询放行去检索；只有股票、娱乐、做菜、学业等明确跑题才回 `OUT_OF_DOMAIN_ANSWER`。查不到出处时回 `NO_EVIDENCE_ANSWER`，不把问法不标准当成超范围。
 3. 检索：`retrievalQuestion = question + 最近 4 条用户历史`；`embedQuery()` 得查询向量 → `searchEvidence(ctx, q, TOP_K, vector)` → 发 `sources`。
 4. 无命中 → 确定性「没有依据」文案（不调模型）。
 5. 有命中 → `buildMessages()`（system + 历史 + 证据 + 问题）→ `streamChat()` 流式 `delta`。

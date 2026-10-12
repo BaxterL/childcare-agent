@@ -21,6 +21,7 @@ import {
   OUT_OF_DOMAIN_ANSWER,
   SYSTEM_PROMPT,
   clarificationQuestion,
+  greetingAnswer,
   isInDomain,
   refusalAnswer,
 } from "./safety.js";
@@ -156,6 +157,14 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
     if (refused) {
       sendSse(response, "sources", []);
       sendSse(response, "delta", { text: refused });
+      sendSse(response, "done", { model: "deterministic", source_count: 0 });
+      response.end();
+      return;
+    }
+    const greeting = greetingAnswer(question);
+    if (greeting) {
+      sendSse(response, "sources", []);
+      sendSse(response, "delta", { text: greeting });
       sendSse(response, "done", { model: "deterministic", source_count: 0 });
       response.end();
       return;
