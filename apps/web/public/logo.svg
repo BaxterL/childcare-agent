@@ -1,12 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <defs>
-    <linearGradient id="moss" x1="10" y1="2" x2="54" y2="62" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2c5c49"/>
-      <stop offset="1" stop-color="#13281f"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="15" fill="url(#moss)"/>
-  <circle cx="32" cy="27" r="8.5" fill="#f6f1e6"/>
-  <path d="M14 35.500a18 18 0 0 0 36 0" stroke="#f6f1e6" stroke-width="4.500" stroke-linecap="round"/>
-  <rect x="43" y="12" width="7.500" height="7.500" rx="1.800" fill="#d4492f" transform="rotate(8 46.750 15.750)"/>
+  <!-- 托育知护 · 护盾新芽（Baxter 选定） -->
+  <rect width="64" height="64" rx="14" fill="#2C5C49"/>
+  <!-- 象牙白护盾 -->
+  <path d="M32 9.5c8.8 3.4 15.6 4.8 20 4.8v17.2c0 11.2-6.8 19.2-20 23.8C18.8 50.7 12 42.7 12 31.5V14.3c4.4 0 11.2-1.4 20-4.8Z" fill="#F6F1E6"/>
+  <!-- 茎 -->
+  <path d="M32 27v17" stroke="#2C5C49" stroke-width="3.6" stroke-linecap="round"/>
+  <!-- 左叶 -->
+  <path d="M30.8 35.2C23.2 33.5 18.8 28.2 18.2 22.5c6.8.6 11.5 4.2 12.6 9.8Z" fill="#2C5C49"/>
+  <!-- 右叶 -->
+  <path d="M33.2 33.8c6.8-2.8 10.2-8 10.4-13.2-5.4 1.8-9.2 5.6-10.4 11Z" fill="#2C5C49"/>
+  <!-- 茎旁珊瑚红点（右侧，紧贴茎） -->
+  <circle cx="38.2" cy="40.5" r="2.9" fill="#E8A598"/>
 </svg>
