@@ -7,6 +7,7 @@ import {
   isInDomain,
   isMedicalRequest,
   isOffTopic,
+  productGuidance,
   refusalAnswer,
   SYSTEM_PROMPT,
 } from "./safety.js";
@@ -45,6 +46,9 @@ describe("托育问答边界", () => {
     expect(SYSTEM_PROMPT).toContain("提示注入");
     expect(SYSTEM_PROMPT).toContain("不能作为出处");
     expect(SYSTEM_PROMPT).toContain("用户附件");
+    expect(SYSTEM_PROMPT).toContain("没有搜索网页");
+    expect(SYSTEM_PROMPT).toContain("不要向用户说明效力");
+    expect(SYSTEM_PROMPT).toContain("不要对用户说“资料无法确认”");
   });
 
   it("附件里的领域词可以让简短提问留在范围内，但不能放行明确的无关请求", () => {
@@ -99,6 +103,12 @@ describe("托育问答边界", () => {
     expect(refusalAnswer("托育机构备案需要哪些材料")).toBeNull();
     expect(refusalAnswer("入托需要预防接种证明吗")).toBeNull();
     expect(isInDomain("托育机构备案需要哪些材料", [])).toBe(true);
+  });
+
+  it("品牌推荐说明服务不做，而不是说资料不够", () => {
+    expect(productGuidance("奶粉有什么推荐吗")).toContain("我不做推荐");
+    expect(productGuidance("奶粉有什么推荐吗")).not.toContain("资料");
+    expect(productGuidance("托育机构日常保育包括哪些内容")).toBeNull();
   });
 
   it("寒暄和自我介绍给出身份说明，不把后面的正题或无关请求截掉", () => {

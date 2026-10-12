@@ -62,7 +62,7 @@ export const QWEN3_EMBEDDING: EmbeddingProfile = {
   approxDownloadMB: 593,
 };
 
-/** 本机 5060 用 Qwen3。更小的 BGE 留给以后的 Linux 机器再选。 */
+/** 默认检索模型。内存更小的机器可以改用 BGE。 */
 export const DEFAULT_EMBED_MODEL = QWEN3_EMBEDDING.modelId;
 
 const KNOWN_PROFILES: readonly EmbeddingProfile[] = [BGE_SMALL_ZH, BGE_BASE_ZH, QWEN3_EMBEDDING];

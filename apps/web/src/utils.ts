@@ -1,44 +1,19 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, SourceRecord, SourceRef } from "./types";
 
-export function statusLabel(status: string): string {
-  return ({ in_force: "现行有效", superseded: "已被替代", withdrawn: "已撤回", draft: "草案", unknown: "效力待核" } as Record<string, string>)[status] ?? status;
-}
-
-export function statusTone(status: string): string {
-  if (status === "in_force") return "is-ok";
-  if (status === "superseded" || status === "withdrawn") return "is-warn";
-  return "is-mute";
+/** Where a citation should open. PDF files land on the cited page; other sources use the publisher URL. */
+export function originalHref(source: SourceRef | SourceRecord): string | null {
+  const page = "pageNumber" in source && source.pageNumber > 0 ? source.pageNumber : 1;
+  const id = "sourceId" in source ? source.sourceId : source.id;
+  if (source.preview === "pdf") return `/api/sources/${encodeURIComponent(id)}/file#page=${page}`;
+  const link = "sourceUrl" in source ? source.sourceUrl : source.source_url;
+  if ((source.preview === "link" || source.preview == null) && link && /^https?:\/\//i.test(link)) return link;
+  return null;
 }
 
 export function formatTime(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
-}
-
-/**
- * Finds the passage an excerpt came from inside a full page of text, ignoring
- * whitespace differences. The excerpt is truncated with "…" by the server.
- */
-export function locateExcerpt(text: string, excerpt: string): [number, number] | null {
-  const needle = excerpt.replace(/…+$/u, "").replace(/\s+/g, "");
-  if (needle.length < 8) return null;
-  const positions: number[] = [];
-  let flat = "";
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]!;
-    if (/\s/.test(char)) continue;
-    positions.push(i);
-    flat += char;
-  }
-  let start = flat.indexOf(needle);
-  let length = needle.length;
-  if (start < 0) {
-    start = flat.indexOf(needle.slice(0, 20));
-    if (start < 0) return null;
-    length = Math.min(needle.length, flat.length - start);
-  }
-  return [positions[start]!, positions[start + length - 1]! + 1];
 }
 
 /* ---------- Answer rendering ---------- */
@@ -52,20 +27,9 @@ const answerCache = new Map<string, string>();
  */
 const OPERATOR_WORDING = /Ollama|模型服务|联网模型|本机模型/;
 
-export function friendlyContent(message: Pick<ChatMessage, "content" | "sources">): string {
+export function friendlyContent(message: Pick<ChatMessage, "content">): string {
   if (!OPERATOR_WORDING.test(message.content)) return message.content;
-  const passages = (message.sources ?? []).slice(0, 3).map((source) => {
-    const text = source.excerpt.replace(/\s+/g, " ").trim();
-    const clipped = text.length > 110 ? `${text.slice(0, 110)}…` : text;
-    return `- 《${source.title}》第${source.pageNumber}页：${clipped} [${source.index}]`;
-  });
-  return [
-    "这个问题的完整答复暂时没能整理出来，先为你找到了最相关的几处原文，可以对照核对：",
-    "",
-    ...passages,
-    "",
-    "稍后重试一次，即可获得整理好的答复。",
-  ].join("\n");
+  return "完整答复暂时没能整理出来。下面的条目可以打开原文核对，稍后重试一次即可获得整理好的答复。";
 }
 
 export function renderAnswer(message: ChatMessage): string {

@@ -2,8 +2,8 @@
 import { computed, ref } from "vue";
 import { ArrowRight, ChevronRight, Search } from "lucide-vue-next";
 import SiteNav from "../components/SiteNav.vue";
-import { go, openReader, sources, sourcesLoaded } from "../state";
-import { statusLabel, statusTone } from "../utils";
+import { go, openOriginal, sources, sourcesLoaded } from "../state";
+import { originalHref } from "../utils";
 
 const query = ref("");
 
@@ -27,7 +27,7 @@ function formatDate(value: string | null): string {
       <header class="head">
         <p class="eyebrow rise" style="--d: 0"><span class="seal-dot"></span>资料库</p>
         <h1 class="rise" style="--d: 1">可追溯的资料来源</h1>
-        <p class="lede rise" style="--d: 2">回答所引用的政策法规、行业标准与照护指南都收录在这里。点开任意一份，可逐页核对原文、发布机构与效力状态。</p>
+        <p class="lede rise" style="--d: 2">回答所引用的政策法规、行业标准与照护指南都收录在这里。有发布页面或 PDF 的，点开即可打开；PDF 会定位到对应页。</p>
       </header>
 
       <div class="toolbar rise" style="--d: 3">
@@ -39,17 +39,15 @@ function formatDate(value: string | null): string {
         <div class="row row-head" role="row">
           <span role="columnheader">资料名称</span>
           <span role="columnheader">发布机构</span>
-          <span role="columnheader">效力</span>
           <span role="columnheader">页数</span>
           <span></span>
         </div>
-        <button v-for="source in filtered" :key="source.version_id" class="row row-item" type="button" role="row" @click="openReader(source)">
+        <button v-for="source in filtered" :key="source.version_id" class="row row-item" type="button" role="row" :disabled="!originalHref(source)" :title="originalHref(source) ? '打开原文' : '暂无原文链接'" @click="openOriginal(source)">
           <span class="c-title" role="cell">
             <strong>{{ source.title }}</strong>
             <small><template v-if="source.document_no">{{ source.document_no }} · </template>发布 {{ formatDate(source.published_at) }}</small>
           </span>
           <span class="c-org" role="cell">{{ source.organization }}</span>
-          <span role="cell"><span class="chip" :class="statusTone(source.legal_status)">{{ statusLabel(source.legal_status) }}</span></span>
           <span class="c-pages" role="cell">{{ source.page_count || "—" }}</span>
           <ChevronRight class="c-arrow" :size="16" />
         </button>
@@ -83,7 +81,11 @@ h1 { margin-top: 18px; font: 700 clamp(34px, 4.6vw, 52px)/1.25 var(--serif); let
 .count { flex: none; color: var(--ink-3); font-size: 13px; }
 .count b { color: var(--ink); font: 600 15px var(--mono); }
 
-.row { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.3fr) 96px 56px 20px; align-items: center; gap: 20px; width: 100%; padding: 0 12px; text-align: left; }
+.row { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.3fr) 56px 20px; align-items: center; gap: 20px; width: 100%; padding: 0 12px; text-align: left; }
+.row-item:disabled { cursor: default; }
+.row-item:disabled:hover { background: none; }
+.row-item:disabled .c-arrow { opacity: 0; }
+.row-item:disabled:hover .c-arrow { color: #b2a98f; transform: none; }
 .row-head { height: 42px; color: var(--ink-3); font-size: 12px; letter-spacing: .1em; border-bottom: 1px solid var(--rule); }
 .row-item { min-height: 82px; padding-top: 16px; padding-bottom: 16px; background: none; border: 0; border-bottom: 1px solid var(--rule-soft); transition: background .25s; }
 .row-item:hover { background: #ece5d480; }
@@ -106,8 +108,7 @@ h1 { margin-top: 18px; font: 700 clamp(34px, 4.6vw, 52px)/1.25 var(--serif); let
   .row { grid-template-columns: minmax(0, 1fr) 20px; gap: 6px 12px; }
   .row-head { display: none; }
   .c-org, .c-pages { display: none; }
-  .row-item > span:nth-child(3) { grid-column: 1; grid-row: 2; }
-  .c-arrow { grid-column: 2; grid-row: 1 / span 2; }
+  .c-arrow { grid-column: 2; grid-row: 1; }
   .next { flex-direction: column; align-items: flex-start; }
 }
 </style>

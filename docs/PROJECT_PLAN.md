@@ -5,7 +5,7 @@
 > 当前版本：`v0.1`  
 > 状态：本机问答 MVP 已搭建，持续补充资料和评测
 
-> 实现说明：当前仓库已提供 Vue 3 + TypeScript 前端、本机 Node HTTP/SSE API、SQLite 页级资料和 BM25 检索，默认对接 Ollama `qwen3:8b`。本文后续仍包含未来目标；FastAPI、Chroma 和向量检索属于设计阶段设想，当前未引入。
+> 实现说明：当前仓库已提供 Vue 3 + TypeScript 前端、本机 Node HTTP/SSE API、SQLite 页级资料和检索。回答使用 DeepSeek。本文后续仍包含未来目标；FastAPI 和 Chroma 属于设计阶段设想，当前未引入。
 
 ## 1. 项目结论
 

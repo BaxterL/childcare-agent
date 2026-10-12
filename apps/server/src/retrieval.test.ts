@@ -1,7 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { sha256Text } from "@childcare/core";
 import { chunkPages, createContext, type PipelineContext } from "@childcare/pipeline";
-import { searchEvidence } from "./retrieval.js";
+import { getSourcePdf, getVisibleSources, searchEvidence } from "./retrieval.js";
 
 const contexts: PipelineContext[] = [];
 
@@ -172,5 +175,53 @@ describe("本地证据检索", () => {
     const hits = searchEvidence(context, "托育机构睡眠安排", 5, null);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]?.title).toContain("保育指导大纲");
+  });
+
+  it("PDF 可以按页预览，资料目录外的文件和网页来源不行", () => {
+    const rawDir = mkdtempSync(join(tmpdir(), "childcare-pdf-"));
+    const context = createContext({ dbPath: ":memory:", rawDir });
+    contexts.push(context);
+    const filename = "国办发.pdf";
+    const filePath = join(rawDir, filename);
+    writeFileSync(filePath, "%PDF-1.4\n");
+    const source = context.sources.create({
+      canonicalTitle: "国办发文件",
+      sourceType: "policy_regulation",
+      authorityLevel: "department_regulation",
+      accessLevel: "public",
+    });
+    context.versions.create({
+      sourceId: source.id,
+      versionLabel: "test",
+      sha256: sha256Text("pdf"),
+      filePath,
+      originalFilename: filename,
+      mimeType: "application/pdf",
+      byteSize: 9,
+    });
+    const web = context.sources.create({
+      canonicalTitle: "网页来源",
+      sourceType: "policy_regulation",
+      authorityLevel: "department_regulation",
+      accessLevel: "public",
+      sourceUrl: "https://www.gov.cn/example",
+    });
+    context.versions.create({
+      sourceId: web.id,
+      versionLabel: "test",
+      sha256: sha256Text("html"),
+      filePath: join(rawDir, "page.htm"),
+      originalFilename: "page.htm",
+      mimeType: "text/html",
+      byteSize: 1,
+    });
+    writeFileSync(join(rawDir, "page.htm"), "<p>hello</p>");
+
+    expect(getSourcePdf(context, source.id)?.filename).toBe(filename);
+    expect(getSourcePdf(context, web.id)).toBeNull();
+    const listed = getVisibleSources(context);
+    expect(listed.find((item) => item.id === source.id)?.preview).toBe("pdf");
+    expect(listed.find((item) => item.id === web.id)?.preview).toBe("link");
+    rmSync(rawDir, { recursive: true, force: true });
   });
 });

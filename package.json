@@ -14,8 +14,10 @@
   "scripts": {
     "childcare": "tsx apps/cli/src/index.ts",
     "dev": "concurrently -k -n API,Web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:https": "concurrently -k -n API,Web -c cyan,green \"npm:dev:api\" \"npm:dev:web:https\"",
     "dev:api": "tsx watch apps/server/src/index.ts",
     "dev:web": "vite --config apps/web/vite.config.ts --host 127.0.0.1",
+    "dev:web:https": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-cert.ps1 && vite --config apps/web/vite.config.ts --host 127.0.0.1",
     "eval": "tsx apps/server/src/evaluate.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",

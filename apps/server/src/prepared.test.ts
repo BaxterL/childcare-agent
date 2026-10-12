@@ -12,6 +12,7 @@ function hit(partial: Partial<Evidence> & Pick<Evidence, "title" | "text" | "sec
     documentNo: null,
     sourceUrl: null,
     legalStatus: "unknown",
+    preview: null,
     publishedAt: null,
     pageNumber: 1,
     articleNumber: null,

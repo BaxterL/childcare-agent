@@ -7,12 +7,12 @@ export interface SourceRef {
   organization: string;
   documentNo: string | null;
   sourceUrl: string | null;
-  legalStatus: string;
+  /** pdf opens the stored file at the cited page; link opens the publisher page. */
+  preview: "pdf" | "link" | null;
   publishedAt: string | null;
   pageNumber: number;
   section: string;
   articleNumber: string | null;
-  excerpt: string;
 }
 
 export interface SourceRecord {
@@ -27,7 +27,7 @@ export interface SourceRecord {
   published_at: string | null;
   effective_from: string | null;
   effective_to: string | null;
-  legal_status: string;
+  preview: "pdf" | "link" | null;
   page_count: number;
 }
 

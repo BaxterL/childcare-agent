@@ -5,9 +5,14 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Environment
+# Environment and secrets. Keep the template.
 .env
-.env.local
+.env.*
+!.env.example
+apps/web/.certs/
+*.pfx
+*.pem
+passphrase.txt
 
 # Runtime data (raw sources, staging, processed artifacts) must not enter Git
 data/raw/
@@ -42,3 +47,10 @@ Thumbs.db
 .commandcode/
 # Portable Ollama runtime and its download (stay on D:, not the user profile)
 tools/
+
+# Local corpus drop, import logs, and scratch. The knowledge base lives in the ignored database.
+incoming/
+tmp-*.mjs
+tmp-*.py
+__pycache__/
+*.pyc

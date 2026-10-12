@@ -17,8 +17,8 @@ import {
   Trash2,
   X,
 } from "lucide-vue-next";
-import { openReader, pendingQuestion, serviceState, SUGGESTIONS } from "../state";
-import { formatTime, friendlyContent, renderAnswer } from "../utils";
+import { openOriginal, pendingQuestion, serviceState, SUGGESTIONS } from "../state";
+import { formatTime, friendlyContent, originalHref, renderAnswer } from "../utils";
 import type { ChatMessage, ChatSession, SourceRef } from "../types";
 
 const STORAGE_KEY = "childcare.sessions.v1";
@@ -183,7 +183,7 @@ function onListClick(event: MouseEvent): void {
   const hit = citeTarget(event);
   if (!hit) return;
   pop.show = false;
-  void openReader(hit.source, hit.message.sources ?? []);
+  openOriginal(hit.source);
 }
 
 function onListKey(event: KeyboardEvent): void {
@@ -191,7 +191,7 @@ function onListKey(event: KeyboardEvent): void {
   const hit = citeTarget(event);
   if (!hit) return;
   event.preventDefault();
-  void openReader(hit.source, hit.message.sources ?? []);
+  openOriginal(hit.source);
 }
 
 function onListOver(event: MouseEvent): void {
@@ -495,7 +495,7 @@ function isStreaming(message: ChatMessage): boolean {
         <section v-if="!activeMessages.length" class="hello">
           <img class="hello-mark rise" style="--d: 0" src="/logo.svg" alt="" width="56" height="56" />
           <h2 class="rise" style="--d: 1">你好，我是托育知护</h2>
-          <p class="rise" style="--d: 2">我会依据资料库回答婴幼儿照护与托育机构管理的问题，并标明每条依据的出处。你可以直接提问，或附上 PDF、Word，也可以从下面开始。</p>
+          <p class="rise" style="--d: 2">我会依据资料库回答婴幼儿照护与托育机构管理的问题，并标明每条依据的出处。你可以直接提问，也可以从下面开始。</p>
           <div class="quick rise" style="--d: 3">
             <button v-for="item in SUGGESTIONS" :key="item.text" type="button" @click="sendSuggestion(item.text)">
               <span class="quick-tag">{{ item.tag }}</span>
@@ -532,10 +532,10 @@ function isStreaming(message: ChatMessage): boolean {
               <footer v-if="(message.sources?.length || message.content) && !isStreaming(message)" class="reply-foot">
                 <div v-if="message.sources?.length" class="refs">
                   <span class="refs-label"><BookOpen :size="14" />参考资料 <b>{{ message.sources.length }}</b></span>
-                  <button v-for="source in message.sources" :key="`${source.chunkId}-${source.index}`" class="ref" type="button" @click="openReader(source, message.sources)">
+                  <button v-for="source in message.sources" :key="`${source.chunkId}-${source.index}`" class="ref" type="button" :disabled="!originalHref(source)" :title="source.documentNo || source.title" @click="openOriginal(source)">
                     <span class="seal">{{ source.index }}</span>
                     <span class="ref-title">{{ source.title }}</span>
-                    <span class="ref-page">P{{ source.pageNumber }}</span>
+                    <span class="ref-page">第{{ source.pageNumber }}页</span>
                   </button>
                 </div>
                 <div v-if="message.content" class="reply-actions">
@@ -567,9 +567,9 @@ function isStreaming(message: ChatMessage): boolean {
               <button type="button" :aria-label="`移除${file.name}`" :disabled="busy" @click="removeFile(file.id)"><X :size="14" /></button>
             </li>
           </ul>
-          <textarea ref="inputEl" v-model="question" rows="1" :disabled="busy" placeholder="输入问题，也可附上 PDF 或 Word…" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
+          <textarea ref="inputEl" v-model="question" rows="1" :disabled="busy" placeholder="输入问题" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
           <div class="composer-bar">
-            <button class="attach" type="button" aria-label="添加文件" title="添加 PDF 或 Word" :disabled="busy || readingFiles" @click="pickFiles"><Paperclip :size="18" /></button>
+            <button class="attach" type="button" aria-label="添加文件" title="添加文件" :disabled="busy || readingFiles" @click="pickFiles"><Paperclip :size="18" /></button>
             <input ref="fileEl" class="file-input" type="file" multiple :accept="FILE_ACCEPT" @change="onPick" />
             <span class="composer-hint"><kbd>Enter</kbd> 发送<i></i><kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</span>
             <button v-if="busy" class="send stop" type="button" aria-label="停止生成" title="停止生成" @click="stopGeneration"><Square :size="13" fill="currentColor" /></button>
@@ -583,9 +583,8 @@ function isStreaming(message: ChatMessage): boolean {
     <!-- Hover preview for an inline citation -->
     <div v-if="pop.show && pop.source" class="cite-pop" :class="{ 'is-above': pop.above }" :style="{ left: `${pop.x}px`, top: `${pop.y}px` }" aria-hidden="true">
       <strong>{{ pop.source.title }}</strong>
-      <span class="pop-meta">{{ pop.source.organization }} · 第{{ pop.source.pageNumber }}页</span>
-      <q v-if="pop.source.excerpt">{{ pop.source.excerpt }}</q>
-      <span class="pop-hint">点击查看原文</span>
+      <span class="pop-meta">{{ pop.source.documentNo || pop.source.organization }} · 第{{ pop.source.pageNumber }}页</span>
+      <span class="pop-hint">{{ originalHref(pop.source) ? "打开原文" : "暂无原文链接" }}</span>
     </div>
   </div>
 </template>
@@ -735,6 +734,7 @@ function isStreaming(message: ChatMessage): boolean {
 .ref { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; height: 36px; padding: 0 12px 0 8px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; transition: border-color .2s, transform .25s var(--ease), box-shadow .25s; }
 .ref:hover { border-color: #bdb398; transform: translateY(-1px); box-shadow: 0 10px 20px -14px #2a24129e; }
 .ref-title { max-width: 260px; overflow: hidden; font: 500 13.5px/1 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+.ref:disabled { cursor: default; opacity: .72; }
 .ref-page { flex: none; color: var(--ink-3); font: 500 11.5px/1 var(--mono); }
 .reply-actions { display: flex; margin-left: -10px; }
 

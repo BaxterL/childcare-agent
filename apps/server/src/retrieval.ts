@@ -1,3 +1,5 @@
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import { bufferToVector, cosineSimilarity, type PipelineContext } from "@childcare/pipeline";
 
 export interface Evidence {
@@ -10,6 +12,8 @@ export interface Evidence {
   documentNo: string | null;
   sourceUrl: string | null;
   legalStatus: string;
+  /** How a reader can open this source. Full text is never sent to the client. */
+  preview: "pdf" | "link" | null;
   publishedAt: string | null;
   pageNumber: number;
   section: string;
@@ -27,6 +31,7 @@ interface Candidate {
   documentNo: string | null;
   sourceUrl: string | null;
   legalStatus: string;
+  preview: "pdf" | "link" | null;
   publishedAt: string | null;
   pageNumber: number;
   sectionPath: string | null;
@@ -64,6 +69,13 @@ function termFrequency(text: string): Map<string, number> {
 }
 
 /** Human-readable section label for a chunk: chapter/section plus article. */
+export function previewKind(mime: string | null, filename: string, sourceUrl: string | null): "pdf" | "link" | null {
+  const pdf = (mime ?? "").toLowerCase() === "application/pdf" || filename.toLowerCase().endsWith(".pdf");
+  if (pdf) return "pdf";
+  if (sourceUrl && /^https?:\/\//i.test(sourceUrl)) return "link";
+  return null;
+}
+
 export function sectionLabel(sectionPath: string | null, articleNumber: string | null): string {
   const parts = [sectionPath, articleNumber].filter((part): part is string => Boolean(part && part.trim()));
   return parts.length ? parts.join(" · ") : "正文";
@@ -77,8 +89,9 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
   const rows = context.db.prepare(`
     SELECT c.id AS chunk_id, c.version_id, c.text, c.section_path, c.article_number, c.page_start,
            c.embedding,
-           s.id AS source_id, s.canonical_title, s.issuing_org, s.document_no, s.source_url,
-           v.legal_status, v.published_at
+           s.id AS source_id, s.canonical_title, s.issuing_org, s.document_no,
+           COALESCE(NULLIF(s.source_url, ''), v.source_url) AS source_url,
+           v.legal_status, v.published_at, v.mime_type, v.original_filename
     FROM knowledge_chunks c
     JOIN knowledge_versions v ON v.id = c.version_id AND v.is_active = 1
     JOIN knowledge_sources s ON s.id = v.source_id
@@ -97,6 +110,11 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
       documentNo: row.document_no ? String(row.document_no) : null,
       sourceUrl: row.source_url ? String(row.source_url) : null,
       legalStatus: String(row.legal_status),
+      preview: previewKind(
+        row.mime_type ? String(row.mime_type) : null,
+        String(row.original_filename ?? ""),
+        row.source_url ? String(row.source_url) : null,
+      ),
       publishedAt: row.published_at ? String(row.published_at) : null,
       pageNumber: Number(row.page_start),
       sectionPath: row.section_path ? String(row.section_path) : null,
@@ -224,6 +242,7 @@ export function searchEvidence(
     documentNo: candidate.documentNo,
     sourceUrl: candidate.sourceUrl,
     legalStatus: candidate.legalStatus,
+    preview: candidate.preview,
     publishedAt: candidate.publishedAt,
     pageNumber: candidate.pageNumber,
     section: sectionLabel(candidate.sectionPath, candidate.articleNumber),
@@ -236,10 +255,11 @@ export function searchEvidence(
 export function getVisibleSources(context: PipelineContext): Array<Record<string, unknown>> {
   const rows = context.db.prepare(`
     SELECT s.id, s.canonical_title AS title, s.issuing_org AS organization,
-           s.document_no AS document_no, s.source_url AS source_url,
+           s.document_no AS document_no,
+           COALESCE(NULLIF(s.source_url, ''), v.source_url) AS source_url,
            s.authority_level AS authority, s.notes,
            v.id AS version_id, v.sha256 AS content_hash, v.published_at, v.effective_from,
-           v.effective_to, v.legal_status,
+           v.effective_to, v.mime_type, v.original_filename,
            COUNT(DISTINCT p.id) AS page_count
     FROM knowledge_sources s
     JOIN knowledge_versions v ON v.source_id = s.id AND v.is_active = 1
@@ -253,21 +273,33 @@ export function getVisibleSources(context: PipelineContext): Array<Record<string
     const key = String(row.content_hash ?? row.version_id);
     if (!unique.has(key)) unique.set(key, row);
   }
-  return [...unique.values()];
+  return [...unique.values()].map((row) => {
+    const sourceUrl = row.source_url ? String(row.source_url) : null;
+    const { mime_type: mimeType, original_filename: filename, ...rest } = row;
+    return {
+      ...rest,
+      source_url: sourceUrl,
+      preview: previewKind(mimeType ? String(mimeType) : null, String(filename ?? ""), sourceUrl),
+    };
+  });
 }
 
-export function getVisiblePage(context: PipelineContext, sourceId: string, pageNumber: number): Record<string, unknown> | null {
-  return context.db.prepare(`
-    SELECT s.id AS source_id, s.canonical_title AS title, s.issuing_org AS organization,
-           s.document_no AS document_no, s.source_url AS source_url,
-           v.id AS version_id, v.legal_status, p.page_number, p.clean_text
+/** Original PDF for inline preview. Anything outside the raw directory is refused. */
+export function getSourcePdf(context: PipelineContext, sourceId: string): { path: string; filename: string } | null {
+  const row = context.db.prepare(`
+    SELECT v.file_path, v.mime_type, v.original_filename
     FROM knowledge_sources s
     JOIN knowledge_versions v ON v.source_id = s.id AND v.is_active = 1
-    JOIN knowledge_pages p ON p.version_id = v.id
     WHERE s.id = ? AND s.can_show_excerpt = 1 AND s.access_level != 'restricted'
-      AND p.page_number = ?
     ORDER BY v.created_at DESC LIMIT 1
-  `).get(sourceId, pageNumber) as Record<string, unknown> | undefined ?? null;
+  `).get(sourceId) as { file_path: string; mime_type: string | null; original_filename: string } | undefined;
+  if (!row || previewKind(row.mime_type, row.original_filename, null) !== "pdf") return null;
+  if (!existsSync(context.config.rawDir) || !existsSync(row.file_path)) return null;
+  const root = realpathSync(context.config.rawDir);
+  const file = realpathSync(resolve(row.file_path));
+  const rel = relative(root, file);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return null;
+  return { path: file, filename: row.original_filename || "document.pdf" };
 }
 
 /** Count searchable chunks and the active versions they cover, for health. */

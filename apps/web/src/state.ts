@@ -1,5 +1,6 @@
-import { reactive, ref } from "vue";
+import { ref } from "vue";
 import type { SourceRecord, SourceRef } from "./types";
+import { originalHref } from "./utils";
 
 /* ---------- Hash router (no extra dependency, back button just works) ---------- */
 
@@ -74,63 +75,9 @@ export async function loadSources(): Promise<void> {
   }
 }
 
-/* ---------- Source reader (drawer) ---------- */
-
-export const reader = reactive({
-  open: false,
-  source: null as SourceRef | SourceRecord | null,
-  siblings: [] as SourceRef[],
-  page: 1,
-  text: "",
-  loading: false,
-});
-
-let pageToken = 0;
-
-export function sourceIdOf(source: SourceRef | SourceRecord): string {
-  return "sourceId" in source ? source.sourceId : source.id;
-}
-
-export function pageCountOf(source: SourceRef | SourceRecord | null): number {
-  if (!source) return 0;
-  const id = sourceIdOf(source);
-  return sources.value.find((item) => item.id === id)?.page_count ?? 0;
-}
-
-export async function openReader(source: SourceRef | SourceRecord, siblings: SourceRef[] = []): Promise<void> {
-  reader.open = true;
-  reader.source = source;
-  reader.siblings = siblings;
-  reader.page = Math.max(1, "pageNumber" in source ? source.pageNumber : 1);
-  await loadReaderPage();
-}
-
-export function closeReader(): void {
-  reader.open = false;
-}
-
-export async function flipReaderPage(delta: number): Promise<void> {
-  if (!reader.source) return;
-  const next = reader.page + delta;
-  const max = pageCountOf(reader.source) || Number.POSITIVE_INFINITY;
-  if (next < 1 || next > max) return;
-  reader.page = next;
-  await loadReaderPage();
-}
-
-async function loadReaderPage(): Promise<void> {
-  if (!reader.source) return;
-  const token = ++pageToken;
-  const id = sourceIdOf(reader.source);
-  reader.loading = true;
-  reader.text = "";
-  try {
-    const response = await fetch(`/api/sources/${encodeURIComponent(id)}/pages/${reader.page}`);
-    const data = await response.json() as { page?: { clean_text: string } };
-    if (token === pageToken) reader.text = data.page?.clean_text ?? "没有可展示的页级文本。";
-  } catch {
-    if (token === pageToken) reader.text = "原文暂时无法加载。";
-  } finally {
-    if (token === pageToken) reader.loading = false;
-  }
+/** Opens the publisher page, or the stored PDF at the cited page. Does nothing when neither exists. */
+export function openOriginal(source: SourceRef | SourceRecord): void {
+  const href = originalHref(source);
+  if (!href) return;
+  window.open(href, "_blank", "noopener,noreferrer");
 }

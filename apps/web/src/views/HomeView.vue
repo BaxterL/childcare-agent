@@ -2,11 +2,11 @@
 import { computed, ref } from "vue";
 import { ArrowRight, ArrowUp, ArrowUpRight } from "lucide-vue-next";
 import SiteNav from "../components/SiteNav.vue";
-import { askFromHome, go, openReader, sources, sourcesLoaded, SUGGESTIONS, TOPICS } from "../state";
+import { askFromHome, go, openOriginal, sources, sourcesLoaded, SUGGESTIONS, TOPICS } from "../state";
+import { originalHref } from "../utils";
 
 const ask = ref("");
 const preview = computed(() => sources.value.slice(0, 5));
-const organizations = computed(() => [...new Set(sources.value.map((item) => item.organization))]);
 
 function submit(): void {
   if (ask.value.length > 3000) return;
@@ -24,7 +24,7 @@ const ROLES = [
   {
     role: "托育机构负责人",
     title: "办好托育，先把规范弄明白",
-    body: "设置标准、管理规范、人员配备、日常制度……需要核对依据时，一问就有答案，还能直接查看政策原文。",
+    body: "设置标准、管理规范、人员配备、日常制度……需要核对依据时，一问就有答案，还能打开政策原文。",
     image: "/images/role-director.jpg",
     alt: "托育机构负责人手持平板站在明亮的走廊里",
     ask: "托育机构设置和管理有哪些基本要求？",
@@ -48,7 +48,7 @@ const ROLES = [
 ];
 
 const PROMISES = [
-  { title: "每条回答都有出处", body: "答复里的关键结论都标有编号，点开就能看到来自哪份资料、第几页，并直接对照原文。" },
+  { title: "每条回答都有出处", body: "答复里的关键结论都标有编号。点开条目，就能打开对应的发布页面或 PDF，并定位到那一页。" },
   { title: "依据权威资料", body: "以国家卫生健康委员会、国务院办公厅等发布的政策法规与照护指南为准，不凭空作答。" },
   { title: "可以接着追问", body: "像和同事聊天一样，围绕同一个话题一路追问，上下文自动衔接，不必重复说明。" },
   { title: "守住专业边界", body: "不做疾病诊断，不解读检查结果，不给用药建议；资料之外的问题会如实告知，而不是编造答案。" },
@@ -57,7 +57,7 @@ const PROMISES = [
 const STEPS = [
   { title: "说出你的问题", body: "用日常的话描述就行，一句话也可以。" },
   { title: "获得清楚的答复", body: "几秒钟内，得到条理清楚、重点明确的答复。" },
-  { title: "点开核对出处", body: "点击编号，对照资料原文，放心采用。" },
+  { title: "点开核对出处", body: "点击编号，打开发布页面或 PDF 核对，放心采用。" },
 ];
 </script>
 
@@ -76,7 +76,7 @@ const STEPS = [
         <p class="hero-lede rise" style="--d: 3">把托育与婴幼儿照护的专业知识，变成随手可问的身边顾问。保育、喂养、安全、机构管理，问一句，就有依据清楚的答复。</p>
 
         <form class="hero-ask rise" style="--d: 4" @submit.prevent="submit">
-          <textarea v-model="ask" rows="2" placeholder="输入一个托育或婴幼儿照护问题…" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
+          <textarea v-model="ask" rows="2" placeholder="输入问题" aria-label="输入问题" @keydown.enter.exact="onEnter"></textarea>
           <div class="hero-ask-bar">
             <span v-if="ask.length > 3000" class="hero-ask-hint is-over" role="status">问题已超过 3000 字（现为 {{ ask.length }} 字），请删减后再提问。</span>
             <span v-else class="hero-ask-hint">按 Enter 提问</span>
@@ -108,14 +108,8 @@ const STEPS = [
       </div>
     </section>
 
-    <!-- ===== Trust strip ===== -->
-    <div class="container">
-      <div class="trust">
-        <p class="trust-label">回答依据来自</p>
-        <p v-if="organizations.length" class="trust-orgs"><span v-for="org in organizations" :key="org">{{ org }}</span></p>
-        <p v-else class="trust-orgs"><span>国家发布的政策法规与照护指南</span></p>
-        <p class="trust-count"><b>{{ sources.length || "—" }}</b> 份官方资料，持续更新</p>
-      </div>
+    <div class="container" aria-hidden="true">
+      <div class="hero-rule"></div>
     </div>
 
     <!-- ===== Who it is for ===== -->
@@ -189,14 +183,14 @@ const STEPS = [
     <section class="section container library">
       <div class="library-copy">
         <p class="eyebrow">资料库</p>
-        <h2 class="section-title">回答背后的每一份<br />资料，都能查看原文。</h2>
+        <h2 class="section-title">回答背后的每一份<br />资料，都能回到出处。</h2>
         <p class="library-lede">答复所依据的政策法规、行业标准与照护指南都收录在资料库中，你可以随时翻阅，自己核对。</p>
         <a class="btn btn-line" href="#/library">浏览全部资料<ArrowRight :size="16" /></a>
       </div>
       <ul class="library-list">
         <template v-if="preview.length">
           <li v-for="source in preview" :key="source.version_id">
-            <button type="button" @click="openReader(source)">
+            <button type="button" :disabled="!originalHref(source)" @click="openOriginal(source)">
               <span class="l-main">
                 <strong>{{ source.title }}</strong>
                 <small>{{ source.organization }}</small>
@@ -274,14 +268,7 @@ const STEPS = [
 .demo-ref small { color: var(--ink-3); font: 500 11.5px var(--sans); }
 @keyframes float { 50% { translate: 0 -8px; } }
 
-/* ---------- Trust strip ---------- */
-.trust { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 32px; padding: 22px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
-.trust-label { color: var(--ink-3); font-size: 12px; font-weight: 600; letter-spacing: .14em; white-space: nowrap; }
-.trust-orgs { display: flex; flex-wrap: wrap; gap: 6px 26px; font: 600 16px/1.5 var(--serif); }
-.trust-orgs span { position: relative; }
-.trust-orgs span + span::before { content: ""; position: absolute; left: -15px; top: 50%; width: 4px; height: 4px; margin-top: -2px; background: var(--seal); border-radius: 1px; transform: rotate(10deg); }
-.trust-count { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
-.trust-count b { margin-right: 2px; color: var(--ink); font: 650 20px var(--serif); }
+.hero-rule { border-top: 1px solid var(--rule); }
 
 /* ---------- Sections ---------- */
 .section { padding-top: clamp(72px, 11vh, 120px); padding-bottom: clamp(24px, 4vh, 40px); }
@@ -364,7 +351,6 @@ const STEPS = [
   .hero { grid-template-columns: minmax(0, 1fr); }
   .hero-visual { max-width: 440px; margin: 20px auto 0; }
   .demo { left: -8px; }
-  .trust { grid-template-columns: minmax(0, 1fr); }
   .roles { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
   .topics { grid-template-columns: minmax(0, 1fr); }
   .topics-photo img { aspect-ratio: 4 / 3; }
