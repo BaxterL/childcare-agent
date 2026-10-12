@@ -28,6 +28,17 @@ const ATTACHMENT_LIMIT = 8000;
 const FILE_LIMIT = 3;
 const FILE_BYTE_LIMIT = 8 * 1024 * 1024;
 const FILE_ACCEPT = ".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown";
+
+// randomUUID is only available in secure contexts. The public site is plain HTTP,
+// where the function is missing or throws, and that used to abort sending.
+function newId(): string {
+  try {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    // Insecure origin. Fall through to a local id.
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 const READABLE = new Set(["pdf", "docx", "txt", "md", "markdown"]);
 
 interface PendingFile {
@@ -89,22 +100,33 @@ const groupedSessions = computed(() => {
 watch(sessions, saveSessions, { deep: true });
 watch(question, () => void nextTick(autosize));
 
+function questionFromLocation(): string {
+  const query = location.hash.split("?")[1] ?? "";
+  return new URLSearchParams(query).get("q")?.trim() ?? "";
+}
+
+function consumePendingQuestion(): void {
+  if (busy.value) return;
+  const fromHash = questionFromLocation();
+  const text = fromHash || pendingQuestion.value.trim();
+  if (!text) return;
+  pendingQuestion.value = "";
+  if (fromHash) history.replaceState(null, "", `${location.pathname}${location.search}#/chat`);
+  startNew();
+  question.value = text;
+  void sendQuestion();
+}
+
 onMounted(() => {
   window.addEventListener("keydown", onWindowKey);
+  consumePendingQuestion();
   void scrollToBottom(true);
 });
 
-// KeepAlive: runs on first mount and every time the user comes back to this page.
+// KeepAlive: also catch a question sent while this page was cached in the background.
 onActivated(() => {
-  const text = pendingQuestion.value;
-  if (text) {
-    pendingQuestion.value = "";
-    startNew();
-    question.value = text;
-    void sendQuestion();
-  } else {
-    void nextTick(() => inputEl.value?.focus());
-  }
+  if (questionFromLocation() || pendingQuestion.value.trim()) consumePendingQuestion();
+  else void nextTick(() => inputEl.value?.focus());
 });
 
 onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKey));
@@ -131,7 +153,7 @@ function saveSessions(value: ChatSession[]): void {
 }
 
 function makeSession(): string {
-  const session: ChatSession = { id: crypto.randomUUID(), title: "新咨询", updatedAt: new Date().toISOString(), messages: [] };
+  const session: ChatSession = { id: newId(), title: "新咨询", updatedAt: new Date().toISOString(), messages: [] };
   sessions.value = [session, ...sessions.value].slice(0, 30);
   activeId.value = session.id;
   return session.id;
@@ -288,7 +310,7 @@ async function addFiles(list: File[]): Promise<void> {
         fileNote.value = `附件文字已超过 ${ATTACHMENT_LIMIT} 字（现为 ${next} 字），请删减后再发送。`;
         continue;
       }
-      files.value = [...files.value, { id: crypto.randomUUID(), name: extracted.name, text: extracted.text }];
+      files.value = [...files.value, { id: newId(), name: extracted.name, text: extracted.text }];
     }
   } catch {
     fileNote.value = "文件暂时读不出来，请换一份后再试。";
@@ -330,13 +352,13 @@ async function sendQuestion(): Promise<void> {
   const attachments = files.value.map(({ name, text: fileText }) => ({ name, text: fileText }));
   session.messages.push(
     {
-      id: crypto.randomUUID(),
+      id: newId(),
       role: "user",
       content: text,
       createdAt: new Date().toISOString(),
       attachments: attachments.map(({ name }) => ({ name })),
     },
-    { id: crypto.randomUUID(), role: "assistant", content: "", createdAt: new Date().toISOString(), sources: [] },
+    { id: newId(), role: "assistant", content: "", createdAt: new Date().toISOString(), sources: [] },
   );
   const reply = session.messages[session.messages.length - 1]!;
   if (session.title === "新咨询") session.title = text.length > 28 ? `${text.slice(0, 28)}…` : text;

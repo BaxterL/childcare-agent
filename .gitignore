@@ -50,6 +50,9 @@ tools/
 
 # Local corpus drop, import logs, and scratch. The knowledge base lives in the ignored database.
 incoming/
+# Local push helpers stay on this machine.
+scripts/push-server.ps1
+deploy/
 tmp-*.mjs
 tmp-*.py
 __pycache__/

@@ -44,7 +44,9 @@ export function askFromHome(text: string): void {
   const value = text.trim();
   if (!value) return;
   pendingQuestion.value = value;
-  go("chat");
+  // Put the question in the hash. The chat page reads it on mount, so the
+  // first visit still sends even when the page was not kept alive yet.
+  location.hash = `#/chat?q=${encodeURIComponent(value)}`;
 }
 
 /* ---------- Service state ---------- */
