@@ -72,10 +72,7 @@ tests/            跨包测试
 ## 4. 问答流程（`chat()`）
 
 1. `readJson`（上限 64KB）→ 问题 trim 后 ≤3000 字；`history` 取最后 8 条（每条 ≤2400 字，仅 user/assistant）。
-2. **前置边界门**（`safety.ts`，命中即确定性回答，`done.model = "deterministic"`，**不调模型**）：
-   - 急症信号 → `EMERGENCY_ANSWER`
-   - 明显超域 → `OUT_OF_DOMAIN_ANSWER`
-   - 医疗/发育障碍求助 → `MEDICAL_BOUNDARY_ANSWER`
+2. **前置边界门**（`safety.ts` 的 `refusalAnswer`，命中即确定性回答，`done.model = "deterministic"`，**不调模型**）：急症、伤害与体罚、危险睡姿或混药、伪造材料、诊断用药与就医/疫苗判断、规避监管、代替负责人拍板、赔偿裁决、0—3 岁以外、套取提示词。未命中再判超域（`OUT_OF_DOMAIN_ANSWER`）。
 3. 检索：`retrievalQuestion = question + 最近 4 条用户历史`；`embedQuery()` 得查询向量 → `searchEvidence(ctx, q, TOP_K, vector)` → 发 `sources`。
 4. 无命中 → 确定性「没有依据」文案（不调模型）。
 5. 有命中 → `buildMessages()`（system + 历史 + 证据 + 问题）→ `streamChat()` 流式 `delta`。
@@ -173,7 +170,7 @@ tests/            跨包测试
 ## 11. 测试与评测
 
 - `npm test`：vitest，**30 个用例**（`safety` 8、`model` 4、`retrieval` 6、`chunker` 5、`pipeline` 7）。
-- `npm run eval`：读 `data/eval/baseline.json`（**31 题**：retrieval 19 / off_topic 4 / medical 5 / emergency 3），写 `data/eval/report.json`（Git 忽略）；有失败 `exitCode=1`。当前结果：31/31，Recall@5 100%，引用可溯源率 100%。
+- `npm run eval`：读 `data/eval/baseline.json`（**37 题**：retrieval 19 / off_topic 8 / medical 7 / emergency 3），写 `data/eval/report.json`（Git 忽略）；有失败 `exitCode=1`。当前结果：37/37，Recall@5 100%，引用可溯源率 100%。
 - `npm run typecheck`（各包 + `vue-tsc`）、`npm run build`。
 
 ## 12. 当前状态（2026-10-11）

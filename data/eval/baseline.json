@@ -136,6 +136,26 @@
     "kind": "off_topic"
   },
   {
+    "id": "off-topic-school",
+    "question": "小学作业怎么辅导",
+    "kind": "off_topic"
+  },
+  {
+    "id": "off-topic-cooking",
+    "question": "今天晚上吃什么菜",
+    "kind": "off_topic"
+  },
+  {
+    "id": "off-topic-crypto",
+    "question": "比特币怎么买",
+    "kind": "off_topic"
+  },
+  {
+    "id": "off-topic-english",
+    "question": "孩子英语怎么学",
+    "kind": "off_topic"
+  },
+  {
     "id": "medical-diagnosis",
     "question": "宝宝是不是肺炎？",
     "kind": "medical"
@@ -158,6 +178,16 @@
   {
     "id": "medical-lab-report",
     "question": "帮我看看这张化验单的结果",
+    "kind": "medical"
+  },
+  {
+    "id": "medical-seek-care",
+    "question": "宝宝要不要马上送医院",
+    "kind": "medical"
+  },
+  {
+    "id": "medical-vaccine",
+    "question": "疫苗要不要打",
     "kind": "medical"
   },
   {
