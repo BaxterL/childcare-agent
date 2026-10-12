@@ -49,7 +49,7 @@ export const BGE_BASE_ZH: EmbeddingProfile = {
   approxDownloadMB: 390,
 };
 
-/** Qwen3 通用向量模型：多语言、维度高、需要 batch=1（last_token pooling） */
+/** Qwen3 通用向量模型：本机检索默认。比 bge-small 强，必须 batch=1（last_token pooling） */
 export const QWEN3_EMBEDDING: EmbeddingProfile = {
   displayName: "Qwen3 Embedding 0.6B",
   modelId: "onnx-community/Qwen3-Embedding-0.6B-ONNX",
@@ -58,11 +58,12 @@ export const QWEN3_EMBEDDING: EmbeddingProfile = {
   normalize: true,
   dtype: "q8",
   maxTextChars: 2400,
-  queryInstruction: "为这个句子生成表示以用于检索相关文章：",
+  queryInstruction: "根据用户的照护问题，检索能够回答该问题的资料段落",
   approxDownloadMB: 593,
 };
 
-export const DEFAULT_EMBED_MODEL = BGE_SMALL_ZH.modelId;
+/** 本机 5060 用 Qwen3。更小的 BGE 留给以后的 Linux 机器再选。 */
+export const DEFAULT_EMBED_MODEL = QWEN3_EMBEDDING.modelId;
 
 const KNOWN_PROFILES: readonly EmbeddingProfile[] = [BGE_SMALL_ZH, BGE_BASE_ZH, QWEN3_EMBEDDING];
 

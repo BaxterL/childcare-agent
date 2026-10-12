@@ -31,6 +31,14 @@ const SESSION_OPTIONS = { intraOpNumThreads: 1, interOpNumThreads: 1 };
 
 const NON_LAST_TOKEN_BATCH = 8;
 
+/** Match chatlab: a trailing colon is a raw prefix; otherwise wrap as Instruct/Query. */
+function applyQueryInstruction(instruction: string, query: string): string {
+  const trimmed = instruction.trim();
+  if (!trimmed) return query;
+  if (trimmed.endsWith(":") || trimmed.endsWith("：")) return `${trimmed}${query}`;
+  return `Instruct: ${trimmed}\nQuery: ${query}`;
+}
+
 /**
  * Local ONNX embedding via transformers.js. The model is downloaded once into
  * `cacheDir` (project-local, never the system drive) and then runs fully
@@ -103,7 +111,7 @@ export class LocalEmbedder implements Embedder {
   }
 
   async embedQuery(text: string): Promise<Float32Array> {
-    const [vector] = await this.embedDocuments([`${this.profile.queryInstruction}${text}`]);
+    const [vector] = await this.embedDocuments([applyQueryInstruction(this.profile.queryInstruction, text)]);
     if (!vector) throw new Error("embedding returned no vector");
     return vector;
   }

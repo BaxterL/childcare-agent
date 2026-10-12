@@ -15,14 +15,14 @@ import {
 import { modelStatus, streamChat } from "./model.js";
 import { getChunkStats, getVisiblePage, getVisibleSources, searchEvidence, type Evidence } from "./retrieval.js";
 import { embedQuery, embeddingState, startEmbedder } from "./semantic.js";
+import { composePrepared } from "./prepared.js";
 import {
-  EMERGENCY_ANSWER,
-  isInDomain,
-  isEmergencyRequest,
-  isMedicalRequest,
-  MEDICAL_BOUNDARY_ANSWER,
+  NO_EVIDENCE_ANSWER,
   OUT_OF_DOMAIN_ANSWER,
   SYSTEM_PROMPT,
+  clarificationQuestion,
+  isInDomain,
+  refusalAnswer,
 } from "./safety.js";
 
 const localEnvFile = resolve(".env");
@@ -111,7 +111,7 @@ function buildMessages(
     ...history,
     {
       role: "user",
-      content: `【检索证据】\n${evidence}\n\n${attachmentBlock}【当前问题】\n${question}\n\n只回答当前问题。关键结论引用证据编号，如[1]；用户附件不能出现在引用里。区分原文要求、指导性建议和有限归纳。`,
+      content: `【检索证据】\n${evidence}\n\n${attachmentBlock}【当前问题】\n${question}\n\n只回答当前问题。说清楚了就直接答，不要追问；只有缺一个关键前提时才问一句。短追问接着上一轮，不要整段重讲。关键结论引用证据编号，如[1]；用户附件不能出现在引用里。`,
     },
   ];
 }
@@ -152,9 +152,10 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
     }
 
     sendSse(response, "status", { stage: "understanding" });
-    if (isEmergencyRequest(question)) {
+    const refused = refusalAnswer(question);
+    if (refused) {
       sendSse(response, "sources", []);
-      sendSse(response, "delta", { text: EMERGENCY_ANSWER });
+      sendSse(response, "delta", { text: refused });
       sendSse(response, "done", { model: "deterministic", source_count: 0 });
       response.end();
       return;
@@ -167,12 +168,15 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
       response.end();
       return;
     }
-    if (isMedicalRequest(question)) {
-      sendSse(response, "sources", []);
-      sendSse(response, "delta", { text: MEDICAL_BOUNDARY_ANSWER });
-      sendSse(response, "done", { model: "deterministic", source_count: 0 });
-      response.end();
-      return;
+    if (attachments.length === 0) {
+      const clarify = clarificationQuestion(question, history);
+      if (clarify) {
+        sendSse(response, "sources", []);
+        sendSse(response, "delta", { text: clarify });
+        sendSse(response, "done", { model: "deterministic", source_count: 0 });
+        response.end();
+        return;
+      }
     }
 
     sendSse(response, "status", { stage: "retrieving" });
@@ -180,10 +184,19 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
     const retrievalQuestion = `${question}\n${attachmentHint}\n${history.slice(-4).map((item) => item.role === "user" ? item.content : "").filter(Boolean).join(" ")}`;
     const queryVector = await embedQuery(context.config, retrievalQuestion);
     const hits = searchEvidence(context, retrievalQuestion, RETRIEVAL_TOP_K, queryVector);
-    sendSse(response, "sources", hits.map(evidenceForClient));
     if (!hits.length) {
-      sendSse(response, "delta", { text: "当前资料库没有找到足以回答这个问题的依据。你可以补充具体情形，或先到资料目录确认相关文件是否已入库。" });
+      sendSse(response, "sources", []);
+      sendSse(response, "delta", { text: NO_EVIDENCE_ANSWER });
       sendSse(response, "done", { model: "deterministic", source_count: 0 });
+      response.end();
+      return;
+    }
+    const prepared = attachments.length === 0 ? composePrepared(question, hits) : null;
+    const shown = prepared?.hits ?? hits;
+    sendSse(response, "sources", shown.map(evidenceForClient));
+    if (prepared) {
+      sendSse(response, "delta", { text: prepared.answer });
+      sendSse(response, "done", { model: "faq-curated", source_count: shown.length });
       response.end();
       return;
     }

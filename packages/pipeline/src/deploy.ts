@@ -40,6 +40,6 @@ export function deployPlan(profile: DeployProfile): DeployPlan {
     profile: "local",
     ollamaFallback: false,
     embedEnabled: true,
-    label: "本机 5060：DeepSeek 回答，本地小模型只做检索",
+    label: "本机 5060：DeepSeek 回答，Qwen3-Embedding 检索",
   };
 }

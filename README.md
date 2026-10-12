@@ -20,9 +20,9 @@ npm run dev
 分工和 chatlab 一样：小模型只做检索，远程模型只写答复。
 
 - **回答（联网）**：`deepseek-chat`。配置 `DEEPSEEK_API_KEY` 后启用。联网不可用时只列出检索到的原文，不用本机对话模型编答案。
-- **检索（本地小模型）**：`Xenova/bge-small-zh-v1.5`（约 95 MB，512 维）。它只把问题和资料块变成向量，再和词法召回融合。对应 chatlab 里的 `Qwen3-Embedding-0.6B`，不是 `qwen3:8b`。
+- **检索（本地）**：`Qwen3-Embedding-0.6B`（约 593 MB，1024 维）。它只把问题和资料块变成向量，再和词法召回融合。这就是 chatlab 推荐的本地检索模型。
 
-`qwen3:8b` 是对话模型，大约 5 GB，不参与回答，也不做向量检索。2 核 2G 和 2 核 4G 都载入不了它。三种部署方案都是「DeepSeek 回答 + 本地小模型检索」，区别只是机器内存：
+`qwen3:8b` 是对话模型，不参与检索，也不写答复。Linux 上换更小的检索模型，等实际上服务器时再定。三种部署方案目前都是「DeepSeek 回答 + 本地检索模型」：
 
 | 方案 | 机器 |
 |---|---|
@@ -42,7 +42,7 @@ DEEPSEEK_MODEL=deepseek-chat
 
 ### 本地向量检索
 
-首次使用时自动从下载源拉取向量模型（默认 `hf-mirror`，约 95 MB），之后完全离线运行。为已有知识块生成/更新向量：
+首次使用时自动从下载源拉取检索模型（默认 `hf-mirror`，约 593 MB），之后完全离线运行。为已有知识块生成/更新向量：
 
 ```powershell
 npm run childcare -- embed          # 只为缺少向量的块生成
@@ -62,7 +62,7 @@ CHILDCARE_PORT=4174
 CHILDCARE_MODEL_PROVIDER=auto           # auto | deepseek；写成 ollama 才会用本机对话模型写答案
 DEEPSEEK_API_KEY=sk-...
 CHILDCARE_EMBED_ENABLED=1
-CHILDCARE_EMBED_MODEL=Xenova/bge-small-zh-v1.5
+CHILDCARE_EMBED_MODEL=onnx-community/Qwen3-Embedding-0.6B-ONNX
 CHILDCARE_EMBED_SOURCE=hf-mirror        # huggingface | hf-mirror
 CHILDCARE_RETRIEVAL_TOP_K=5
 CHILDCARE_DB_PATH=./data/childcare.db
