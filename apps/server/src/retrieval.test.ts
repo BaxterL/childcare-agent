@@ -22,13 +22,14 @@ function addPage(
   context: PipelineContext,
   title: string,
   text: string,
-  permissions: { canShowExcerpt?: boolean; accessLevel?: string } = {},
+  permissions: { canShowExcerpt?: boolean; accessLevel?: string; jurisdiction?: string | null } = {},
 ): string {
   const source = context.sources.create({
     canonicalTitle: title,
     sourceType: "policy_regulation",
     authorityLevel: "department_regulation",
     issuingOrg: "国家卫生健康委员会",
+    jurisdiction: permissions.jurisdiction ?? null,
     accessLevel: permissions.accessLevel ?? "public",
     canShowExcerpt: permissions.canShowExcerpt ?? true,
   });
@@ -166,6 +167,26 @@ describe("本地证据检索", () => {
 
     expect(combined).toContain("膳食营养");
     expect(combined).toContain("午睡巡视");
+  });
+
+  it("没提地区时不用地方文件，提到当地时地方文件排在通用文件后面", () => {
+    const context = makeContext();
+    const national = "托育机构保育指导大纲";
+    const chongqing = "渝卫发2023 66 普惠认定补助办法";
+    const hangzhou = "杭州社区嵌入式服务设施建设工程";
+    addPage(context, national, "托育机构应当做好婴幼儿晨检和全日健康观察，并做好记录。", { jurisdiction: "national" });
+    addPage(context, chongqing, "重庆市普惠托育机构认定和补助，晨检记录纳入日常管理。", { jurisdiction: "重庆市" });
+    addPage(context, hangzhou, "杭州市社区嵌入式托育设施建设，包含晨检空间。", { jurisdiction: "浙江省杭州市" });
+
+    const general = searchEvidence(context, "托育机构晨检要做哪些记录").map((hit) => hit.title);
+    expect(general[0]).toBe(national);
+    expect(general).not.toContain(chongqing);
+    expect(general).not.toContain(hangzhou);
+
+    const local = searchEvidence(context, "重庆托育机构晨检记录怎么要求").map((hit) => hit.title);
+    expect(local[0]).toBe(national);
+    expect(local).toContain(chongqing);
+    expect(local).not.toContain(hangzhou);
   });
 
   it("没有向量时退回纯 BM25 检索", () => {

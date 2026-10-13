@@ -20,6 +20,8 @@ export interface Evidence {
   articleNumber: string | null;
   text: string;
   score: number;
+  /** Server-only. national / international are general; a place name is local. */
+  jurisdiction: string | null;
 }
 
 interface Candidate {
@@ -37,6 +39,8 @@ interface Candidate {
   sectionPath: string | null;
   articleNumber: string | null;
   text: string;
+  /** national / international are general. A place name means a local document. */
+  jurisdiction: string | null;
   terms: Map<string, number>;
   vector: Float32Array | null;
 }
@@ -89,7 +93,7 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
   const rows = context.db.prepare(`
     SELECT c.id AS chunk_id, c.version_id, c.text, c.section_path, c.article_number, c.page_start,
            c.embedding,
-           s.id AS source_id, s.canonical_title, s.issuing_org, s.document_no,
+           s.id AS source_id, s.canonical_title, s.issuing_org, s.document_no, s.jurisdiction,
            COALESCE(NULLIF(s.source_url, ''), v.source_url) AS source_url,
            v.legal_status, v.published_at, v.mime_type, v.original_filename
     FROM knowledge_chunks c
@@ -120,6 +124,7 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
       sectionPath: row.section_path ? String(row.section_path) : null,
       articleNumber: row.article_number ? String(row.article_number) : null,
       text,
+      jurisdiction: row.jurisdiction ? String(row.jurisdiction) : null,
       terms: termFrequency(text),
       vector: row.embedding ? bufferToVector(row.embedding as Uint8Array) : null,
     };
@@ -162,6 +167,45 @@ function scoreBm25(candidates: Candidate[], question: string): Scored[] {
     if (candidate.title && question.includes(candidate.title)) score += 2;
     return { candidate, score };
   });
+}
+
+const GENERAL_JURISDICTIONS = new Set(["", "national", "international", "全国", "中国"]);
+/** Finer places named in a title when the stored jurisdiction is only the province. */
+const TITLE_PLACES = ["成都", "万盛", "丰都"];
+
+function isGeneralJurisdiction(value: string | null): boolean {
+  return GENERAL_JURISDICTIONS.has((value ?? "").trim().toLowerCase());
+}
+
+/** Province and city names a local document applies to. */
+function placeTokens(jurisdiction: string, title: string): string[] {
+  const fromAdmin = jurisdiction
+    .replace(/维吾尔自治区|壮族自治区|回族自治区|自治区/g, " ")
+    .replace(/特别行政区/g, " ")
+    .replace(/[省市州盟区县]/g, " ")
+    .split(/\s+/)
+    .filter((part) => part.length >= 2);
+  const fromTitle = TITLE_PLACES.filter((name) => title.includes(name));
+  return [...new Set([...fromAdmin, ...fromTitle])];
+}
+
+function matchesRegion(candidate: Candidate, question: string): boolean {
+  if (isGeneralJurisdiction(candidate.jurisdiction)) return false;
+  return placeTokens(candidate.jurisdiction ?? "", candidate.title).some((token) => question.includes(token));
+}
+
+/**
+ * General documents stay in front. A local document is only eligible when the
+ * question names its place, and then it takes at most the last citation slot.
+ */
+function preferGeneral(ranked: Scored[], question: string, limit: number): Scored[] {
+  const general = ranked.filter((item) => isGeneralJurisdiction(item.candidate.jurisdiction));
+  const regional = ranked.filter((item) => matchesRegion(item.candidate, question));
+  const head = selectDiverse(general, limit);
+  const local = selectDiverse(regional, 1);
+  if (!local.length) return head;
+  if (head.length >= limit) return [...head.slice(0, Math.max(0, limit - 1)), local[0]!];
+  return [...head, ...local].slice(0, limit);
 }
 
 function selectDiverse(sorted: Scored[], limit: number): Scored[] {
@@ -230,7 +274,7 @@ export function searchEvidence(
     : scored
         .filter((item) => item.score >= BM25_THRESHOLD)
         .sort((a, b) => b.score - a.score || a.candidate.sourceId.localeCompare(b.candidate.sourceId));
-  const selected = selectDiverse(ranked, limit);
+  const selected = preferGeneral(ranked, question, limit);
 
   return selected.map(({ candidate, score }, index) => ({
     index: index + 1,
@@ -249,6 +293,7 @@ export function searchEvidence(
     articleNumber: candidate.articleNumber,
     text: candidate.text,
     score: Number(score.toFixed(4)),
+    jurisdiction: candidate.jurisdiction,
   }));
 }
 
