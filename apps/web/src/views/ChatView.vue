@@ -381,8 +381,11 @@ async function sendQuestion(): Promise<void> {
     if (!response.ok || !response.body) throw new Error("服务暂时不可用，请稍后再试。");
     await readEventStream(response.body, (event, data) => {
       if (event === "status") step.value = data.stage === "retrieving" ? 1 : data.stage === "answering" ? 2 : 0;
-      if (event === "sources") reply.sources = data as unknown as SourceRef[];
+      if (event === "sources") reply.sources = Array.isArray(data) ? data as unknown as SourceRef[] : [];
       if (event === "delta") reply.content += String(data.text ?? "");
+      if (event === "warning" && data.code === "model_unavailable" && reply.content.trim()) {
+        reply.content += "\n\n答复在这里中断了，可以再问一次。";
+      }
       if (event === "error") reply.error = String(data.message ?? "本次答复失败，请稍后再试。");
       void scrollToBottom();
     });

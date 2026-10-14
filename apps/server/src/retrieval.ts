@@ -25,6 +25,8 @@ export interface Evidence {
 }
 
 interface Candidate {
+  /** Sum of term frequencies, cached with the chunk so scoring does not recount. */
+  termLength: number;
   chunkId: string;
   sourceId: string;
   versionId: string;
@@ -85,7 +87,14 @@ export function sectionLabel(sectionPath: string | null, articleNumber: string |
   return parts.length ? parts.join(" · ") : "正文";
 }
 
-const candidateCache = new WeakMap<PipelineContext, { signature: string; rows: Candidate[] }>();
+interface CachedCorpus {
+  signature: string;
+  rows: Candidate[];
+  documentFrequency: Map<string, number>;
+  averageLength: number;
+}
+
+const candidateCache = new WeakMap<PipelineContext, CachedCorpus>();
 
 function corpusSignature(context: PipelineContext): string {
   const row = context.db.prepare(`
@@ -108,10 +117,10 @@ function corpusSignature(context: PipelineContext): string {
  * Parsed rows stay in memory until the chunk text or vectors change, so a
  * 2-core server does not retokenize the whole library on every question.
  */
-export function loadCandidates(context: PipelineContext): Candidate[] {
+function corpusOf(context: PipelineContext): CachedCorpus {
   const signature = corpusSignature(context);
   const cached = candidateCache.get(context);
-  if (cached?.signature === signature) return cached.rows;
+  if (cached?.signature === signature) return cached;
   const rows = context.db.prepare(`
     SELECT c.id AS chunk_id, c.version_id, c.text, c.section_path, c.article_number, c.page_start,
            c.embedding,
@@ -148,11 +157,33 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
       text,
       jurisdiction: row.jurisdiction ? String(row.jurisdiction) : null,
       terms: termFrequency(text),
+      termLength: 0,
       vector: storedVector(row.embedding),
     };
   });
-  candidateCache.set(context, { signature, rows: loaded });
-  return loaded;
+  const documentFrequency = new Map<string, number>();
+  let totalLength = 0;
+  for (const candidate of loaded) {
+    let length = 0;
+    for (const [term, frequency] of candidate.terms) {
+      length += frequency;
+      documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
+    }
+    candidate.termLength = length;
+    totalLength += length;
+  }
+  const entry: CachedCorpus = {
+    signature,
+    rows: loaded,
+    documentFrequency,
+    averageLength: (loaded.length ? totalLength / loaded.length : 0) || 1,
+  };
+  candidateCache.set(context, entry);
+  return entry;
+}
+
+export function loadCandidates(context: PipelineContext): Candidate[] {
+  return corpusOf(context).rows;
 }
 
 interface Scored {
@@ -161,22 +192,19 @@ interface Scored {
 }
 
 /** Lexical BM25 score plus exact-document-number, title and phrase bonuses. */
-function scoreBm25(candidates: Candidate[], question: string): Scored[] {
+function scoreBm25(
+  corpus: CachedCorpus,
+  question: string,
+  focus = "",
+): Scored[] {
   const queryTerms = tokenize(question);
   if (!queryTerms.length) return [];
-  const documentFrequency = new Map<string, number>();
-  for (const candidate of candidates) {
-    for (const term of candidate.terms.keys()) {
-      documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
-    }
-  }
-  const averageLength =
-    candidates.reduce((sum, item) => sum + [...item.terms.values()].reduce((a, b) => a + b, 0), 0) /
-      candidates.length || 1;
-  const normalizedQuestion = question.toLowerCase().replace(/[\s，。！？、]/g, "");
+  const { rows: candidates, documentFrequency, averageLength } = corpus;
+  const bonusText = focus.trim() || question;
+  const normalizedBonus = bonusText.toLowerCase().replace(/[\s，。！？、]/g, "");
 
   return candidates.map((candidate) => {
-    const length = [...candidate.terms.values()].reduce((a, b) => a + b, 0);
+    const length = candidate.termLength;
     let score = 0;
     for (const term of queryTerms) {
       const frequency = candidate.terms.get(term) ?? 0;
@@ -186,9 +214,9 @@ function scoreBm25(candidates: Candidate[], question: string): Scored[] {
       score += idf * ((frequency * 2.2) / (frequency + 1.2 * (0.25 + 0.75 * length / averageLength)));
     }
     const normalizedText = candidate.text.toLowerCase().replace(/[\s，。！？、]/g, "");
-    if (normalizedQuestion.length >= 4 && normalizedText.includes(normalizedQuestion)) score += 3;
-    if (candidate.documentNo && question.includes(candidate.documentNo)) score += 4;
-    if (candidate.title && question.includes(candidate.title)) score += 2;
+    if (normalizedBonus.length >= 4 && normalizedText.includes(normalizedBonus)) score += 3;
+    if (candidate.documentNo && bonusText.includes(candidate.documentNo)) score += 4;
+    if (candidate.title && bonusText.includes(candidate.title)) score += 2;
     return { candidate, score };
   });
 }
@@ -302,9 +330,9 @@ export function searchEvidence(
   queryVector: Float32Array | null = null,
   focus = "",
 ): Evidence[] {
-  const candidates = loadCandidates(context);
-  if (!candidates.length) return [];
-  const scored = scoreBm25(candidates, question);
+  const corpus = corpusOf(context);
+  if (!corpus.rows.length) return [];
+  const scored = scoreBm25(corpus, question, focus);
   if (!scored.length) return [];
 
   const ranked = queryVector

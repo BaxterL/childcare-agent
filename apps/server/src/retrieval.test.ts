@@ -208,6 +208,22 @@ describe("本地证据检索", () => {
     expect(titles).not.toContain("杭州社区托育");
   });
 
+  it("整句加分看当前问题，不看拼进来的上一轮", () => {
+    const context = makeContext();
+    addPage(context, "晨检记录要求", "托育机构应当做好晨检记录并通知监护人。");
+    addPage(context, "杭州运营补助", "杭州补贴办法运营补助。杭州补贴。杭州补贴。杭州社区托育补贴标准。");
+
+    const titles = searchEvidence(
+      context,
+      "托育机构应当做好晨检记录并通知监护人\n杭州补贴办法运营补助杭州补贴杭州补贴",
+      5,
+      null,
+      "托育机构应当做好晨检记录并通知监护人",
+    ).map((hit) => hit.title);
+
+    expect(titles[0]).toBe("晨检记录要求");
+  });
+
   it("新区按完整地名匹配", () => {
     const context = makeContext();
     addPage(context, "托育机构保育指导大纲", "托育机构应当做好婴幼儿晨检和全日健康观察，并做好记录。", { jurisdiction: "national" });
