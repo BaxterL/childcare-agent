@@ -13,6 +13,7 @@ export function vectorToBuffer(vector: Float32Array): Buffer {
 
 /** Rebuild a Float32Array from a stored BLOB (copying so it does not alias a pooled buffer). */
 export function bufferToVector(buffer: Uint8Array): Float32Array {
+  if (buffer.byteLength === 0 || buffer.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0) return new Float32Array();
   const copy = new Uint8Array(buffer.byteLength);
   copy.set(buffer);
   return new Float32Array(copy.buffer);

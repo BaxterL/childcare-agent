@@ -45,4 +45,10 @@ describe("预制问答", () => {
       hit({ title: "保育指导大纲", text: "睡眠", section: "睡眠" }),
     ])).toBeNull();
   });
+
+  it("问句只碰到别名的一小段时不套预制答复", () => {
+    expect(composePrepared("需要哪些材料", [
+      hit({ title: "托育机构管理规范", text: "第四条 备案材料", section: "第四条" }),
+    ])).toBeNull();
+  });
 });

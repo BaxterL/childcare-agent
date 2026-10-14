@@ -215,7 +215,7 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
     const attachmentHint = attachments.map((file) => file.text.slice(0, 400)).join("\n");
     const retrievalQuestion = `${question}\n${attachmentHint}\n${history.slice(-4).map((item) => item.role === "user" ? item.content : "").filter(Boolean).join(" ")}`;
     const queryVector = await embedQuery(context.config, retrievalQuestion);
-    const hits = searchEvidence(context, retrievalQuestion, RETRIEVAL_TOP_K, queryVector);
+    const hits = searchEvidence(context, retrievalQuestion, RETRIEVAL_TOP_K, queryVector, question);
     if (!hits.length) {
       sendSse(response, "sources", []);
       sendSse(response, "delta", { text: NO_EVIDENCE_ANSWER });
@@ -234,8 +234,11 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
     }
 
     sendSse(response, "status", { stage: "answering" });
+    let wrote = false;
     try {
       const answer = await streamChat(buildMessages(question, history, hits, attachments), controller.signal, (text) => {
+        if (!text) return;
+        wrote = true;
         sendSse(response, "delta", { text });
       });
       sendSse(response, "done", { model: answer.model, provider: answer.provider, source_count: hits.length });
@@ -243,8 +246,8 @@ async function chat(request: IncomingMessage, response: ServerResponse): Promise
       if (controller.signal.aborted) return;
       const reason = error instanceof Error && error.name === "TimeoutError" ? "模型响应超时" : "模型服务未连接";
       sendSse(response, "warning", { code: "model_unavailable", message: reason });
-      sendSse(response, "delta", { text: retrievalOnlyAnswer() });
-      sendSse(response, "done", { model: "retrieval-only", source_count: hits.length });
+      if (!wrote) sendSse(response, "delta", { text: retrievalOnlyAnswer() });
+      sendSse(response, "done", { model: wrote ? "partial" : "retrieval-only", source_count: hits.length });
     }
   } catch {
     sendSse(response, "error", { code: "invalid_request", message: "请求无法处理，请检查输入后重试。" });
@@ -326,7 +329,13 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
 }
 
 async function serveStatic(urlPath: string, response: ServerResponse): Promise<void> {
-  const decoded = decodeURIComponent(urlPath.split("?")[0] ?? "/");
+  let decoded = "/";
+  try {
+    decoded = decodeURIComponent(urlPath.split("?")[0] ?? "/");
+  } catch {
+    json(response, 400, { message: "请求路径无效。" });
+    return;
+  }
   const candidate = resolve(WEB_DIST, `.${decoded}`);
   const safeRoot = `${WEB_DIST}${sep}`;
   const requested = candidate.startsWith(safeRoot) && existsSync(candidate) && statSync(candidate).isFile()

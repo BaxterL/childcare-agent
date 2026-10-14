@@ -55,10 +55,7 @@ function compact(text: string): string {
 export function matchPrepared(question: string): PreparedEntry | null {
   const normalized = compact(question);
   if (normalized.length < 6) return null;
-  return ENTRIES.find((entry) => entry.aliases.some((alias) => {
-    const key = compact(alias);
-    return normalized.includes(key) || key.includes(normalized);
-  })) ?? null;
+  return ENTRIES.find((entry) => entry.aliases.some((alias) => normalized.includes(compact(alias)))) ?? null;
 }
 
 /** 把预制答复绑到真实检索结果上。对不上资料时返回 null，交给模型。 */

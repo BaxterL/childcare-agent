@@ -189,6 +189,34 @@ describe("本地证据检索", () => {
     expect(local).not.toContain(hangzhou);
   });
 
+  it("当前问题点了地名时，不把上一轮的另一个城市带进来", () => {
+    const context = makeContext();
+    addPage(context, "托育机构保育指导大纲", "托育机构应当做好婴幼儿晨检和全日健康观察，并做好记录。", { jurisdiction: "national" });
+    addPage(context, "重庆普惠托育补助", "重庆市普惠托育机构晨检记录纳入日常管理。", { jurisdiction: "重庆市" });
+    addPage(context, "杭州社区托育", "杭州市社区托育设施要单设晨检空间，晨检空间晨检空间。", { jurisdiction: "浙江省杭州市" });
+
+    const titles = searchEvidence(
+      context,
+      "重庆托育机构晨检记录怎么要求\n杭州社区托育晨检空间",
+      5,
+      null,
+      "重庆托育机构晨检记录怎么要求",
+    ).map((hit) => hit.title);
+
+    expect(titles).toContain("重庆普惠托育补助");
+    expect(titles).not.toContain("杭州社区托育");
+  });
+
+  it("新区按完整地名匹配", () => {
+    const context = makeContext();
+    addPage(context, "托育机构保育指导大纲", "托育机构应当做好婴幼儿晨检和全日健康观察，并做好记录。", { jurisdiction: "national" });
+    addPage(context, "浦东社区托育", "浦东新区社区托育点要保留晨检记录。", { jurisdiction: "上海市浦东新区" });
+
+    const titles = searchEvidence(context, "浦东托育机构晨检记录怎么做").map((hit) => hit.title);
+    expect(titles[0]).toContain("保育指导大纲");
+    expect(titles).toContain("浦东社区托育");
+  });
+
   it("没有向量时退回纯 BM25 检索", () => {
     const context = makeContext();
     addPage(context, "托育机构保育指导大纲", "托育机构应当合理安排婴幼儿睡眠和一日生活。");

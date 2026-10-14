@@ -126,7 +126,7 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
       text,
       jurisdiction: row.jurisdiction ? String(row.jurisdiction) : null,
       terms: termFrequency(text),
-      vector: row.embedding ? bufferToVector(row.embedding as Uint8Array) : null,
+      vector: storedVector(row.embedding),
     };
   });
 }
@@ -182,6 +182,7 @@ function placeTokens(jurisdiction: string, title: string): string[] {
   const fromAdmin = jurisdiction
     .replace(/维吾尔自治区|壮族自治区|回族自治区|自治区/g, " ")
     .replace(/特别行政区/g, " ")
+    .replace(/新区/g, " ")
     .replace(/[省市州盟区县]/g, " ")
     .split(/\s+/)
     .filter((part) => part.length >= 2);
@@ -198,9 +199,11 @@ function matchesRegion(candidate: Candidate, question: string): boolean {
  * General documents stay in front. A local document is only eligible when the
  * question names its place, and then it takes at most the last citation slot.
  */
-function preferGeneral(ranked: Scored[], question: string, limit: number): Scored[] {
+function preferGeneral(ranked: Scored[], question: string, limit: number, focus = ""): Scored[] {
   const general = ranked.filter((item) => isGeneralJurisdiction(item.candidate.jurisdiction));
-  const regional = ranked.filter((item) => matchesRegion(item.candidate, question));
+  const namedNow = focus.trim() ? ranked.filter((item) => matchesRegion(item.candidate, focus)) : [];
+  // 当前问题点了地名时，只留这个地方。没点名时才用整段检索词，好让“那补助呢”接着上一轮。
+  const regional = namedNow.length ? namedNow : ranked.filter((item) => matchesRegion(item.candidate, question));
   const head = selectDiverse(general, limit);
   const local = selectDiverse(regional, 1);
   if (!local.length) return head;
@@ -258,11 +261,22 @@ function fuseHybrid(scored: Scored[], queryVector: Float32Array): Scored[] {
  * semantic rankings are fused; without one (no local model available) it falls
  * back to pure BM25.
  */
+function storedVector(value: unknown): Float32Array | null {
+  if (!value) return null;
+  try {
+    const vector = bufferToVector(value as Uint8Array);
+    return vector.length ? vector : null;
+  } catch {
+    return null;
+  }
+}
+
 export function searchEvidence(
   context: PipelineContext,
   question: string,
   limit = 5,
   queryVector: Float32Array | null = null,
+  focus = "",
 ): Evidence[] {
   const candidates = loadCandidates(context);
   if (!candidates.length) return [];
@@ -274,7 +288,7 @@ export function searchEvidence(
     : scored
         .filter((item) => item.score >= BM25_THRESHOLD)
         .sort((a, b) => b.score - a.score || a.candidate.sourceId.localeCompare(b.candidate.sourceId));
-  const selected = preferGeneral(ranked, question, limit);
+  const selected = preferGeneral(ranked, question, limit, focus);
 
   return selected.map(({ candidate, score }, index) => ({
     index: index + 1,

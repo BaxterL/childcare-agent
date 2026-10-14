@@ -136,8 +136,16 @@ export function isEmergencyRequest(text: string): boolean {
   return EMERGENCY_PATTERN.test(text);
 }
 
+const HARM_CONCEALMENT = /(不留痕|不被发现|隐瞒)/;
+/** 在问禁止、杜绝体罚，而不是在要做法。 */
+const HARM_PROHIBITION = /(禁止|严禁|不得|不允许|不准|杜绝|反对|防止|避免).{0,8}(体罚|惩罚|打骂|虐待)|(体罚|惩罚|打骂|虐待).{0,8}(禁止|严禁|不得|不允许|违法)/;
+
 export function isHarmRequest(text: string): boolean {
-  return HARM_PATTERNS.some((pattern) => pattern.test(text));
+  const matched = HARM_PATTERNS.some((pattern) => pattern.test(text));
+  if (!matched) return false;
+  if (HARM_CONCEALMENT.test(text)) return true;
+  if (HARM_PROHIBITION.test(text)) return false;
+  return true;
 }
 
 export function isForgeryRequest(text: string): boolean {

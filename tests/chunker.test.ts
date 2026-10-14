@@ -78,6 +78,7 @@ describe("结构感知分块", () => {
   it("向量的序列化与反序列化保持一致", () => {
     const vector = new Float32Array([0.5, -1.25, 3, 0.001]);
     expect(Array.from(bufferToVector(vectorToBuffer(vector)))).toEqual(Array.from(vector));
+    expect(bufferToVector(new Uint8Array([1, 2, 3]))).toHaveLength(0);
   });
 
   it("为知识块保存本地向量并登记模型", () => {

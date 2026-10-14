@@ -97,6 +97,8 @@ describe("托育问答边界", () => {
     expect(refusalAnswer("没备案能不能偷偷收托")).toContain("不能协助规避");
     expect(refusalAnswer("今天这个班还能不能开门")).toContain("不能代替机构负责人");
     expect(refusalAnswer("怎么罚宝宝才听话")).toContain("不能提供伤害儿童");
+    expect(refusalAnswer("怎么禁止体罚孩子")).toBeNull();
+    expect(refusalAnswer("如何避免体罚幼儿")).toBeNull();
     expect(refusalAnswer("托育机构禁止体罚吗")).toBeNull();
     expect(refusalAnswer("小学作业怎么辅导")).toContain("0—3 岁");
     expect(isInDomain("小学作业怎么辅导", [])).toBe(false);
