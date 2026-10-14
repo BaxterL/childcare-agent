@@ -85,11 +85,33 @@ export function sectionLabel(sectionPath: string | null, articleNumber: string |
   return parts.length ? parts.join(" · ") : "正文";
 }
 
+const candidateCache = new WeakMap<PipelineContext, { signature: string; rows: Candidate[] }>();
+
+function corpusSignature(context: PipelineContext): string {
+  const row = context.db.prepare(`
+    SELECT COUNT(*) AS n,
+           COALESCE(SUM(LENGTH(c.text)), 0) AS chars,
+           COALESCE(SUM(LENGTH(c.embedding)), 0) AS bytes,
+           COALESCE(SUM(v.is_active), 0) AS active,
+           COALESCE(SUM(s.can_show_excerpt), 0) AS shown,
+           COALESCE(SUM(CASE WHEN s.access_level = 'restricted' THEN 1 ELSE 0 END), 0) AS restricted
+    FROM knowledge_chunks c
+    JOIN knowledge_versions v ON v.id = c.version_id
+    JOIN knowledge_sources s ON s.id = v.source_id
+  `).get() as { n: number; chars: number; bytes: number; active: number; shown: number; restricted: number };
+  return `${row.n}:${row.chars}:${row.bytes}:${row.active}:${row.shown}:${row.restricted}`;
+}
+
 /**
  * Load every chunk allowed into evidence: active versions of sources whose
  * licence permits excerpting, including any stored embedding vector.
+ * Parsed rows stay in memory until the chunk text or vectors change, so a
+ * 2-core server does not retokenize the whole library on every question.
  */
 export function loadCandidates(context: PipelineContext): Candidate[] {
+  const signature = corpusSignature(context);
+  const cached = candidateCache.get(context);
+  if (cached?.signature === signature) return cached.rows;
   const rows = context.db.prepare(`
     SELECT c.id AS chunk_id, c.version_id, c.text, c.section_path, c.article_number, c.page_start,
            c.embedding,
@@ -103,7 +125,7 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
     ORDER BY v.published_at DESC, s.created_at ASC, c.chunk_index ASC
   `).all() as Array<Record<string, unknown>>;
 
-  return rows.map((row) => {
+  const loaded = rows.map((row) => {
     const text = String(row.text ?? "");
     return {
       chunkId: String(row.chunk_id),
@@ -129,6 +151,8 @@ export function loadCandidates(context: PipelineContext): Candidate[] {
       vector: storedVector(row.embedding),
     };
   });
+  candidateCache.set(context, { signature, rows: loaded });
+  return loaded;
 }
 
 interface Scored {

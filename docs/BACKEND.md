@@ -71,12 +71,12 @@ tests/            跨包测试
 
 ## 4. 问答流程（`chat()`）
 
-1. `readJson`（上限 64KB）→ 问题 trim 后 ≤3000 字；`history` 取最后 8 条（每条 ≤2400 字，仅 user/assistant）。
-2. **前置边界门**（`safety.ts` 的 `refusalAnswer`，命中即确定性回答，`done.model = "deterministic"`，**不调模型**）：急症、伤害与体罚、危险睡姿或混药、伪造材料、诊断用药与就医/疫苗判断、规避监管、代替负责人拍板、赔偿裁决、0—3 岁以外、套取提示词。寒暄和自我介绍走固定介绍。其余问题按项目咨询放行去检索；只有股票、娱乐、做菜、学业等明确跑题才回 `OUT_OF_DOMAIN_ANSWER`。查不到出处时回 `NO_EVIDENCE_ANSWER`，不把问法不标准当成超范围。
-3. 检索：`retrievalQuestion = question + 最近 4 条用户历史`；`embedQuery()` 得查询向量 → `searchEvidence(ctx, q, TOP_K, vector)` → 发 `sources`。
-4. 无命中 → 确定性「没有依据」文案（不调模型）。
-5. 有命中 → `buildMessages()`（system + 历史 + 证据 + 问题）→ `streamChat()` 流式 `delta`。
-6. 模型失败：发 `warning(model_unavailable)` + `retrievalOnlyAnswer()`（只提示稍后重试，不贴原文）+ `done.model = "retrieval-only"`；不伪造生成式总结。
+1. `readJson`（问答请求上限 256KB，其它 JSON 默认 64KB）→ 问题 trim 后 ≤3000 字；`history` 取最后 8 条（每条 ≤2400 字，仅 user/assistant）。
+2. **前置边界门**（`safety.ts` 的 `refusalAnswer`，命中即确定性回答，`done.model = "deterministic"`，**不调模型**）：急症、伤害与隐瞒伤害、危险睡姿或混药、伪造材料、诊断用药与就医/疫苗判断、规避监管、代替负责人拍板、赔偿裁决、0—3 岁以外、套取提示词。询问「禁止体罚 / 如何避免体罚」不是伤害请求，仍可检索。寒暄和自我介绍走固定介绍。品牌推荐走 `productGuidance`，不说成资料不够。其余问题按项目咨询放行去检索；只有股票、娱乐、做菜、学业等明确跑题才回 `OUT_OF_DOMAIN_ANSWER`。
+3. 检索：`retrievalQuestion = question + 附件摘录 + 最近 4 条用户问题`；`embedQuery()` 得查询向量 → `searchEvidence(ctx, retrievalQuestion, TOP_K, vector, question)`。第五个参数是当前问题，用来决定地方文件：当前问题点了地名就只用这个地方；没点名才用整段检索词，短追问才能接着上一轮。→ 发 `sources`。
+4. 无命中 → `NO_EVIDENCE_ANSWER`（对用户说「不凭空下结论」，不说「资料不足」；不调模型）。
+5. 有命中且问题包含某条预制别名的全文、并且命中块对得上标题和锚点 → `composePrepared`。只碰到别名的一小段不套预制。否则 `buildMessages()` → `streamChat()` 流式 `delta`。
+6. 模型失败：发 `warning(model_unavailable)`。还没写出任何字时才补 `retrievalOnlyAnswer()`，`done.model = "retrieval-only"`。已经写出一部分时保留已生成文字，`done.model = "partial"`，不再把失败说明接在后面。
 
 `buildMessages` 明确标注证据为「不可信资料」，并说明引用编号必须来自证据。
 
@@ -90,19 +90,21 @@ tests/            跨包测试
 
 ## 6. 检索（`apps/server/src/retrieval.ts`）
 
-- `loadCandidates()`：**单条 SQL** 取「生效版本 + `can_show_excerpt=1` + `access_level != 'restricted'` + `char_count>0`」的知识块，并带出 `embedding` blob。
+- `loadCandidates()`：**单条 SQL** 取「生效版本 + `can_show_excerpt=1` + `access_level != 'restricted'` + `char_count>0`」的知识块，并带出 `embedding` blob。结果按库内段落数、正文长度、向量长度、生效版本和摘录权限缓存；这些变了才重新分词。损坏的向量（长度不是 4 的倍数）当成没有向量，不让整次检索失败。
 - 词法侧 `scoreBm25()`：中文 2~3 元 + 英文/数字词项，含停用词；叠加整句包含（+3）、文号命中（+4）、标题命中（+2）。
 - 语义侧：查询向量与块向量做 `cosineSimilarity`。
 - `fuseHybrid()`：**RRF 融合**（`k=60`，按排名不按原始分值），避免 BM25/余弦量纲问题。
 - **无查询向量时退回纯 BM25**（阈值 `0.55`）——这条降级路径必须保留（评测走的就是它）。
 - `selectDiverse()`：每来源最多 2 块，`top_k` 夹在 1~8。
+- `preferGeneral()`：`national` / `international` / 空 / 「全国」「中国」算通用，排在前面。地方文件（如「重庆市」「上海市浦东新区」）只有问题里出现该地名才进入最后一个引用位。「新区」先按整词切开，避免把「浦东新区」切成对不上的「浦东新」。
+- 已知限制：已入库的《托育机构设置标准》人员部分和职责写在同一长段，正文里没有单独的乳儿班、托小班人员比例。问“配比标准”时，排序会先碰到质量评估里“配备保育人员”的段落。不要为了这一题把排序改成按标题硬塞，否则会挤掉其他题已经对上的资料。
 - Evidence 字段：`index/chunkId/sourceId/versionId/title/organization/documentNo/sourceUrl/legalStatus/preview/publishedAt/pageNumber/section/articleNumber/text/score`。`legalStatus` 和 `text` 只留在服务端，不发给浏览器。`preview` 为 `pdf`、`link` 或 `null`。
 - 另外导出 `getVisibleSources()`、`getSourcePdf()`、`getChunkStats()`。回答请求不带 `tools`。
 
 ## 7. 本地向量
 
 - `packages/pipeline/src/embed/`：
-  - `profiles.ts`：模型档案（维度、pooling、dtype、query 前缀）；`DEFAULT_EMBED_MODEL = Xenova/bge-small-zh-v1.5`（512 维，cls pooling）。
+  - `profiles.ts`：模型档案（维度、pooling、dtype、query 前缀）。当前默认 `DEFAULT_EMBED_MODEL = onnx-community/Qwen3-Embedding-0.6B-ONNX`（1024 维，last_token，q8）。`bge-small` / `bge-base` 档案还在，留给以后的 Linux 选型，不是现在的默认。
   - `embedder.ts`：`createLocalEmbedder()`，用 transformers.js 本机跑 ONNX。
   - `index.ts`：`embedVersionChunks()`（写向量 + 登记模型）、`cosineSimilarity`、`vectorToBuffer`/`bufferToVector`。
 - 权重缓存在 `CHILDCARE_EMBED_CACHE_DIR`（默认 `./data/models`，**Git 忽略，不写系统盘**）；下载源 `hf-mirror`（默认，因 HuggingFace 被墙）或 `huggingface`。

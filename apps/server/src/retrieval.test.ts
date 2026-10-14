@@ -123,6 +123,7 @@ describe("本地证据检索", () => {
 
     const oldVersion = addVersion("v1", "旧版：托育机构午睡巡视每三十分钟一次，记录呼吸和睡姿。");
     const newVersion = addVersion("v2", "新版：托育机构午睡巡视每十五分钟一次，记录呼吸和睡姿。");
+    expect(searchEvidence(context, "托育机构午睡巡视时间").map((hit) => hit.text).join(" ")).toContain("三十分钟");
     context.versions.setActiveExclusive(newVersion.id, oldVersion.id);
 
     expect(context.versions.getActiveBySource(source.id)?.id).toBe(newVersion.id);
